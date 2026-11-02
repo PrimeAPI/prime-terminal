@@ -90,7 +90,10 @@ export function App() {
   const actionRef = useRef<(a: KeybindingAction, e: KeyboardEvent) => boolean>(() => false)
   actionRef.current = (a, e) => {
     const target = e.target as HTMLElement
-    const editable = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || !!target.closest('.cm-editor')
+    // xterm.js receives keys through a hidden <textarea>; that one is the terminal, not a text field
+    const inTerminal = target.classList.contains('xterm-helper-textarea')
+    const editable =
+      !inTerminal && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || !!target.closest('.cm-editor'))
     const modal = overlay !== null || !!document.querySelector('.backdrop')
     if (modal && a !== 'newWindow') return false
     if (editable && (a === 'copy' || a === 'paste' || a === 'find')) return false
