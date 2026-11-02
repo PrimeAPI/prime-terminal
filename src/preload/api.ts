@@ -23,6 +23,8 @@ export interface DesktopIntegrationStatus {
   /** 'user': no password needed, 'system': asks for the admin password once */
   searchProviderSupport: 'user' | 'system' | 'unavailable'
   searchProviderNote: string
+  /** installed by a system package: everything is set up already */
+  installed: boolean
   /** ask once on the first start of the portable build */
   askOnStart: boolean
   command: string[]

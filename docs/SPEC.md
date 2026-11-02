@@ -45,28 +45,19 @@ sind. Nur so kann ein Tab ohne Verbindungsabbruch in ein anderes Fenster wandern
 - Konfiguration liegt im **Benutzerprofil**:
   - Linux: `~/.config/prime-terminal/`
   - Windows: `%APPDATA%\prime-terminal\`
-### 3.1 Builds – vorerst nur lokal
+### 3.1 Builds
 
-**Vorerst nur lokal bauen. Keine GitHub-Anbindung, kein Remote, keine Workflows, keine Releases.**
-
-npm-Scripts:
-- `npm run dev`: App im Entwicklungsmodus mit Hot-Reload für den Renderer.
-- `npm run lint`, `npm run typecheck`, `npm test`
-- `npm run dist:linux`: erzeugt die `AppImage` unter `dist/`.
-- `npm run dist:win`: erzeugt die portable `.exe` unter `dist/`.
-
-Wichtig: `node-pty` ist ein natives Modul und muss pro Plattform gegen die Electron-Version
-gebaut werden (`electron-builder install-app-deps` bzw. `@electron/rebuild`). Daraus folgt:
-- Die `.AppImage` wird auf Linux gebaut.
-- Die `.exe` wird **auf Windows gebaut**. Ein Cross-Build von Linux aus (wine) funktioniert wegen `node-pty` nicht zuverlässig und ist kein Ziel.
-
-### 3.2 Später (nicht Teil der aktuellen Aufgabe): GitHub Actions
-
-Die Builds sollen später über GitHub Actions automatisiert werden. Das wird erst umgesetzt, wenn ausdrücklich gewünscht. Geplant ist:
-- Bei jedem Push/PR: Lint, Typecheck, Tests, Build (Matrix aus `ubuntu-latest` und `windows-latest`).
-- Bei Git-Tag `v*`: Build und Upload von `.exe` und `.AppImage` an ein GitHub Release.
-
-Die lokalen npm-Scripts sind so anzulegen, dass die CI sie später 1:1 aufrufen kann.
+- Lokal:
+  - `npm run dist:linux` erzeugt `AppImage` und `.deb`.
+  - `npm run dist:win` erzeugt die portable `.exe`; das geht nur auf Windows, wegen der nativen Module.
+- GitHub Actions (`.github/workflows/build.yml`):
+  - Bei jedem Push und PR laufen Lint, Typecheck, Tests und Builds.
+  - Bei einem Tag `v*` wird ein GitHub Release mit `.exe`, `.AppImage` und `.deb` erstellt. Die Version kommt aus dem Tag.
+- Die `.deb` installiert zusätzlich:
+  - den GNOME-Search-Provider
+  - `/usr/bin/primeterminal`
+  - ein AppArmor-Profil für Ubuntu 24.04+
+- Die AppImage startet auf Systemen mit eingeschränkten User-Namespaces (Ubuntu 24.04+) automatisch mit `--no-sandbox`. Eine AppImage kann den SUID-Sandbox-Helper nicht nutzen.
 
 ---
 
@@ -370,7 +361,6 @@ Alle übrigen Tasten, z. B. `Ctrl+D`, `Ctrl+Z`, `Ctrl+R`, `Ctrl+L`, `Alt+…` un
 - Tray-Icon / Hintergrundbetrieb ohne Fenster
 - Verschlüsselung gespeicherter Passwörter / Master-Passwort
 - Code-Signing der Windows-exe
-- GitHub (Repo-Remote, Actions, Releases), vorerst nur lokale Builds
 - macOS, ARM-Builds
 - Settings-Formular-UI (Settings nur über `settings.json`)
 - Wiederherstellung von Sitzungen beim Start
@@ -388,7 +378,7 @@ Alle übrigen Tasten, z. B. `Ctrl+D`, `Ctrl+Z`, `Ctrl+R`, `Ctrl+L`, `Alt+…` un
 7. **Port Forwarding:** Engine (L/R/D, Jumps, Teilfehler, Backoff, Auto-Start), Tunnel-Popup.
 8. **Set-Verwaltung:** Form-Ansicht, JSON-Ansicht, Copy/Paste, Export/Import.
 9. **Lokale Release-Builds:** `dist:linux` und `dist:win` erzeugen lauffähige Artefakte, mit Smoke-Test auf beiden Plattformen.
-10. *(Später, nur auf Anfrage)* GitHub Actions und Releases, siehe 3.2.
+10. GitHub Actions und Releases (siehe 3.1).
 
 ---
 
@@ -411,7 +401,7 @@ Alle übrigen Tasten, z. B. `Ctrl+D`, `Ctrl+Z`, `Ctrl+R`, `Ctrl+L`, `Alt+…` un
 
 ## 14. Umsetzungsstand (v1)
 
-Alle Punkte aus Abschnitt 1–13 sind umgesetzt, mit Ausnahme der ausdrücklich verschobenen GitHub Actions (3.2).
+Alle Punkte aus Abschnitt 1–13 sind umgesetzt.
 Prüfung: `npm test` (Unit- und Integrationstests gegen SSH-Server im Testprozess), `npm run typecheck`, `npm run lint`,
 Smoke-Tests der gebauten App und der AppImage (siehe README, „Smoke testing“).
 
@@ -426,7 +416,7 @@ Präzisierungen und Abweichungen gegenüber dem Text oben:
   neues Fenster an der Mausposition. Beim Loslassen auf der Tab-Leiste eines anderen Fensters wandert der Tab dorthin.
 - **Automatisch erkannte Shells** bekommen stabile, aus dem Shell-Typ abgeleitete UUIDs.
 - **Zusätzliche Dateien im Config-Ordner:** `window-state.json` (letzte Fensterposition) und `chromium/` (Electron-Cache).
-- **Windows-`.exe`:** Der Build ist nur auf Windows möglich, mit Visual Studio Build Tools für die nativen Module. Ein Cross-Build von Linux aus bricht an `cpu-features` ab.
+- **Windows-`.exe`:** Der Build ist nur auf Windows möglich (in CI auf `windows-latest`). Ein Cross-Build von Linux aus bricht an `cpu-features` ab.
 
 ---
 

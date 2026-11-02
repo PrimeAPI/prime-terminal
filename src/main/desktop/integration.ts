@@ -49,6 +49,8 @@ export interface IntegrationStatus extends IntegrationOptions {
   portable: boolean
   searchProviderSupport: SearchProviderSupport
   searchProviderNote: string
+  /** installed by a system package (.deb): launcher, search provider and command already exist */
+  installed: boolean
 }
 
 const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512]
@@ -139,6 +141,10 @@ export class DesktopIntegration {
     return !!(process.env.APPIMAGE || process.env.PORTABLE_EXECUTABLE_FILE)
   }
 
+  private installed(): boolean {
+    return process.platform === 'linux' && app.isPackaged && !process.env.APPIMAGE
+  }
+
   iconDir(): string {
     return app.isPackaged ? join(process.resourcesPath, 'icons') : join(app.getAppPath(), 'build/icons')
   }
@@ -163,6 +169,7 @@ export class DesktopIntegration {
       searchProvider: this.state.searchProvider,
       cliCommand: this.state.cliCommand,
       askOnStart: supported && !this.state.asked && !this.state.enabled && this.portable(),
+      installed: this.installed(),
       command: this.command(),
       portable: this.portable(),
       searchProviderSupport: sp.support,

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -28,6 +28,24 @@ describe('search provider files', () => {
 
 const hasPythonGi = spawnSync('python3', ['-c', "import gi; gi.require_version('Gio','2.0')"]).status === 0
 const hasDbus = existsSync('/usr/bin/dbus-run-session') && existsSync('/usr/bin/gdbus')
+
+describe.skipIf(!hasPythonGi || process.platform !== 'linux')('search provider for system-wide installs', () => {
+  it('finds servers.json below $XDG_CONFIG_HOME when no file is configured', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sp-'))
+    mkdirSync(join(dir, 'prime-terminal'))
+    writeFileSync(
+      join(dir, 'prime-terminal', 'servers.json'),
+      JSON.stringify({ folders: [], servers: [{ id: 'x', type: 'ssh', name: 'alpha', host: 'a', port: 22, username: 'u', auth: { method: 'auto' } }] })
+    )
+    const script = join(dir, 'provider.py')
+    writeFileSync(script, searchProviderScript({ serversFile: null, command: ['/usr/bin/prime-terminal'] }))
+    const out = execFileSync('python3', ['-c', `exec(open(${JSON.stringify(script)}).read().replace("if __name__ == '__main__':", "if False:")); print(search(['alp']))`], {
+      encoding: 'utf8',
+      env: { ...process.env, XDG_CONFIG_HOME: dir }
+    })
+    expect(out.trim()).toBe("['x']")
+  })
+})
 
 describe.skipIf(!hasPythonGi || !hasDbus || process.platform !== 'linux')('search provider over D-Bus', () => {
   it('returns matching servers with metadata and launches the app on activation', () => {

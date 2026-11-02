@@ -20,7 +20,8 @@ export function searchProviderIni(): string {
 }
 
 export function searchProviderService(python: string, script: string): string {
-  return ['[D-BUS Service]', `Name=${SEARCH_BUS_NAME}`, `Exec=${python} ${script}`, ''].join('\n')
+  const quoted = /\s/.test(script) ? `"${script}"` : script
+  return ['[D-BUS Service]', `Name=${SEARCH_BUS_NAME}`, `Exec=${python} ${quoted}`, ''].join('\n')
 }
 
 /** Picks a directory from GNOME Shell's XDG_DATA_DIRS that lives in the user's home and is writable. */
@@ -33,15 +34,16 @@ export function userSearchProviderBase(dataDirs: string[], home: string, writabl
   return null
 }
 
-export function searchProviderScript(opts: { serversFile: string; command: string[] }): string {
+/** serversFile null: resolved at runtime from $XDG_CONFIG_HOME (system-wide install for all users). */
+export function searchProviderScript(opts: { serversFile: string | null; command: string[] }): string {
   return `#!/usr/bin/env python3
 # Prime Terminal – GNOME Shell search provider (generated, do not edit)
-import json, subprocess
+import json, os, subprocess
 import gi
 gi.require_version('Gio', '2.0')
 from gi.repository import Gio, GLib
 
-SERVERS_FILE = ${JSON.stringify(opts.serversFile)}
+SERVERS_FILE = ${opts.serversFile === null ? "os.path.join(os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config'), 'prime-terminal', 'servers.json')" : JSON.stringify(opts.serversFile)}
 COMMAND = ${JSON.stringify(opts.command)}
 BUS_NAME = ${JSON.stringify(SEARCH_BUS_NAME)}
 OBJECT_PATH = ${JSON.stringify(SEARCH_OBJECT_PATH)}

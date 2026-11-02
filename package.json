@@ -1,9 +1,12 @@
 {
   "name": "prime-terminal",
   "productName": "Prime Terminal",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Portable cross-platform SSH client with tabs, proxy jumps and port forwarding sets",
-  "author": "Iain Schmidt <iain.schmidt@pm.me>",
+  "author": {
+    "name": "Iain Schmidt",
+    "email": "primeapi@primeapi.de"
+  },
   "license": "UNLICENSED",
   "private": true,
   "main": "out/main/index.js",
@@ -17,8 +20,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "electron-builder install-app-deps",
-    "dist:linux": "npm run build && electron-builder --linux AppImage",
-    "dist:win": "npm run build && electron-builder --win portable"
+    "dist:linux": "npm run build && npm run package-files && electron-builder --linux --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "package-files": "tsx scripts/linux-package-files.ts"
   },
   "dependencies": {
     "node-pty": "^1.1.0",
@@ -57,10 +61,16 @@
     "globals": "^17.14.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
   },
-  "desktopName": "prime-terminal.desktop"
+  "desktopName": "prime-terminal.desktop",
+  "homepage": "https://github.com/PrimeAPI/prime-terminal",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PrimeAPI/prime-terminal.git"
+  }
 }

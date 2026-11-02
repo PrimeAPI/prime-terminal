@@ -1,0 +1,11 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# The launcher script (/opt/Prime Terminal/prime-terminal) starts the Electron binary
+# prime-terminal-bin; that binary needs user namespaces for Chromium's sandbox (Ubuntu 24.04+).
+profile "prime-terminal" "/opt/Prime Terminal/prime-terminal-bin" flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/prime-terminal>
+}

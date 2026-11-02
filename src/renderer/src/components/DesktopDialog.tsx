@@ -50,6 +50,17 @@ export function DesktopDialog({ firstStart, onClose, notify }: Props) {
     onClose()
   }
 
+  if (st.installed) {
+    return (
+      <Modal center title="Desktop integration" onClose={onClose} footer={<button onClick={onClose}>Close</button>}>
+        <p>
+          Prime Terminal is installed as a package. The app menu entry, the server results in the GNOME search and the{' '}
+          <span className="mono">primeterminal</span> command are already set up.
+        </p>
+      </Modal>
+    )
+  }
+
   if (!st.supported) {
     return (
       <Modal center title="Desktop integration" onClose={onClose} footer={<button onClick={onClose}>Close</button>}>

@@ -1,71 +1,80 @@
 # Prime Terminal
 
-Portable SSH client for Linux and Windows: a classic terminal with tabs and multiple windows,
-saved servers with proxy-jump chains, local shells and background port-forwarding sets.
-The full specification is in [task.md](task.md).
+A simple SSH client for Linux and Windows: a classic terminal with tabs and windows, saved servers,
+proxy jumps and port forwarding sets that run in the background.
+
+![icon](build/icons/128x128.png)
+
+## Download
+
+Get the latest version from the [releases page](https://github.com/PrimeAPI/prime-terminal/releases):
+
+| File | System | |
+|---|---|---|
+| `prime-terminal-<version>-portable.exe` | Windows 10/11 | portable, just run it |
+| `prime-terminal-<version>-x86_64.AppImage` | Linux | portable: `chmod +x` and run it |
+| `prime-terminal_<version>_amd64.deb` | Debian / Ubuntu | `sudo apt install ./prime-terminal_<version>_amd64.deb` |
+
+On the first start the portable versions offer to add themselves to the app menu and search.
+The `.deb` sets this up during installation.
+
+The Windows exe is not code-signed, so SmartScreen shows a warning on the first start
+(*More info → Run anyway*).
+
+## Features
+
+- Tabs and multiple windows. Drag a tab out of the window to get a new window, or drag it into another window.
+- Saved servers in nested folders, with password, SSH key or agent authentication.
+- Host keys are checked against `~/.ssh/known_hosts`. You can import hosts from `~/.ssh/config`.
+- Proxy jumps through one or more saved servers.
+- Port forwarding sets (local, remote and SOCKS):
+  - start and stop them from the ⇄ button
+  - auto-start and auto-reconnect
+  - edit them as a table or as JSON
+- Local shells: bash, PowerShell, cmd, Git Bash, WSL.
+- Export and import of the whole configuration (`.ptbackup`). Passwords are only included when you set an export password, and are then stored encrypted.
+- GNOME search shows your servers as results of Prime Terminal. The command line works the same way:
+
+  ```bash
+  primeterminal web-01              # saved server (name or host)
+  primeterminal deploy@10.0.0.5     # any host
+  primeterminal --new-window a b    # several tabs in a new window
+  ```
+
+## Keyboard
+
+| Keys | Action |
+|---|---|
+| `Ctrl+C` | interrupt (always goes to the terminal) |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
+| `Ctrl+Shift+T` / `Ctrl+Shift+O` | new tab / quick connect |
+| `Ctrl+Shift+W` | close tab |
+| `Ctrl+Shift+N` | new window |
+| `Ctrl+PgUp` / `Ctrl+PgDn` | previous / next tab |
+| `Alt+1` … `Alt+9` | go to tab |
+| `Ctrl+Shift+F` | search in the scrollback |
+| `Ctrl+Shift+B` | toggle the server list |
+
+All shortcuts can be changed in `settings.json` (menu ≡ → Settings).
+
+## Configuration
+
+Stored in `~/.config/prime-terminal/` (Linux) or `%APPDATA%\prime-terminal\` (Windows):
+`servers.json`, `forward-sets.json` and `settings.json`. All three are plain JSON, can be edited by
+hand and are reloaded automatically. Saved passwords are stored in plain text in `servers.json`.
 
 ## Development
 
 ```bash
-npm install          # also rebuilds node-pty for Electron
+npm install
 npm run dev          # start with hot reload
-npm test             # unit + integration tests (in-process SSH servers)
-npm run typecheck
-npm run lint
+npm test             # unit and integration tests
+npm run lint && npm run typecheck
+npm run dist:linux   # AppImage + .deb in dist/
+npm run dist:win     # portable exe (on Windows)
 ```
 
-## Builds (local only)
+Releases are built by GitHub Actions: push a tag like `v1.2.3` and the release with all three
+files is created automatically.
 
-| Command | Output | Build on |
-|---|---|---|
-| `npm run dist:linux` | `dist/prime-terminal-<version>-x86_64.AppImage` | Linux |
-| `npm run dist:win` | `dist/prime-terminal-<version>-portable.exe` | Windows (needs Visual Studio Build Tools + Python for native modules) |
-
-Cross-building the Windows exe on Linux is not supported (native modules).
-
-## Desktop integration & command line
-
-On the first start of the AppImage / portable exe the app offers to add itself to the app menu and
-desktop search (Linux: `~/.local/share/applications`, Windows: Start menu), optionally with a
-GNOME search provider (saved servers appear as search results of Prime Terminal) and a
-`primeterminal` command. Change it later via ≡ → *Desktop integration…*.
-
-```bash
-primeterminal web-01            # saved server by name (or its host)
-primeterminal deploy@10.0.0.5   # ad hoc
-primeterminal --new-window a b  # several tabs in a new window
-```
-
-A running instance receives the arguments and opens the tabs there.
-
-## Where things are stored
-
-`~/.config/prime-terminal/` (Linux) or `%APPDATA%\prime-terminal\` (Windows):
-
-- `servers.json` – servers, folders, local shells (passwords in plain text)
-- `forward-sets.json` – port-forwarding sets
-- `settings.json` – terminal settings and keybindings (applied live)
-- `window-state.json` – last window position
-
-Export/import of the whole configuration: main menu → *Export configuration…* creates a `.ptbackup`
-file (a plain ZIP). Saved passwords are only included when you set an export password; they are
-then stored encrypted in `secrets.enc`.
-
-Host keys are checked against `~/.ssh/known_hosts`; keys default to `~/.ssh/id_*`;
-a running ssh-agent / Pageant is used automatically.
-
-## Architecture
-
-- `src/main` – Electron main process. All sessions (`sessions/`), tunnels (`tunnels/`) and SSH
-  connections (`ssh/`) live here, so a tab can move between windows without reconnecting.
-  `app.ts` wires windows, IPC and the tab model.
-- `src/preload` – the typed `window.pt` API (`api.ts`).
-- `src/renderer` – React UI (xterm.js terminals, sidebar, dialogs, set manager with CodeMirror JSON view).
-- `src/shared` – domain types and pure logic (validation, JSON exchange format, keybindings, schemas).
-
-## Smoke testing
-
-`PT_SMOKE_SCREENSHOT=/tmp/shot.png [PT_SMOKE_JS=script.js] electron .` runs an optional script in the
-first window (it can use `window.pt`), saves a screenshot of every window and quits.
-In packaged builds it additionally requires `PT_ALLOW_SMOKE=1`.
-Use `HOME=/some/tmp XDG_CONFIG_HOME=/some/tmp/.config` to keep it away from your real config and known_hosts.
+The detailed specification is in [docs/SPEC.md](docs/SPEC.md) (German).
