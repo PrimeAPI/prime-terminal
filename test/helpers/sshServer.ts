@@ -26,8 +26,8 @@ export interface TestServer {
 
 export function genKey(type: 'ed25519' | 'rsa' = 'ed25519', passphrase?: string) {
   return type === 'rsa'
-    ? utils.generateKeyPairSync('rsa', { bits: 2048, ...(passphrase ? { passphrase, cipher: 'aes256-cbc' } : {}) })
-    : utils.generateKeyPairSync('ed25519', passphrase ? { passphrase, cipher: 'aes256-cbc' } : undefined)
+    ? utils.generateKeyPairSync('rsa', { bits: 2048, ...(passphrase ? { passphrase, cipher: 'aes256-cbc', rounds: 16 } : {}) })
+    : utils.generateKeyPairSync('ed25519', passphrase ? { passphrase, cipher: 'aes256-cbc', rounds: 16 } : {})
 }
 
 const eq = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
