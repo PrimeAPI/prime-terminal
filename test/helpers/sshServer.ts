@@ -25,9 +25,14 @@ export interface TestServer {
 }
 
 export function genKey(type: 'ed25519' | 'rsa' = 'ed25519', passphrase?: string) {
-  return type === 'rsa'
-    ? utils.generateKeyPairSync('rsa', { bits: 2048, ...(passphrase ? { passphrase, cipher: 'aes256-cbc', rounds: 16 } : {}) })
-    : utils.generateKeyPairSync('ed25519', passphrase ? { passphrase, cipher: 'aes256-cbc', rounds: 16 } : {})
+  // ssh2's generator occasionally emits keys its own parser rejects ("Malformed OpenSSH private key");
+  // retry so tests are deterministic.
+  for (let i = 0; i < 20; i++) {
+    const opts = (passphrase ? { passphrase, cipher: 'aes256-cbc', rounds: 16 } : {}) as { passphrase: string; cipher: string; rounds: number }
+    const kp = type === 'rsa' ? utils.generateKeyPairSync('rsa', { bits: 2048, ...opts }) : utils.generateKeyPairSync('ed25519', opts)
+    if (!(utils.parseKey(kp.private, passphrase) instanceof Error) && !(utils.parseKey(kp.public) instanceof Error)) return kp
+  }
+  throw new Error('could not generate a parseable key')
 }
 
 const eq = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
