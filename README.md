@@ -19,12 +19,6 @@ sudo apt update && sudo apt install prime-terminal
 
 New versions then arrive with the normal system updates (`sudo apt upgrade`).
 
-### Snap
-
-```bash
-sudo snap install prime-terminal --classic
-```
-
 ### Other downloads
 
 From the [releases page](https://github.com/PrimeAPI/prime-terminal/releases):
@@ -36,7 +30,7 @@ From the [releases page](https://github.com/PrimeAPI/prime-terminal/releases):
 | `prime-terminal_<version>_amd64.deb` | Debian / Ubuntu | `sudo apt install ./prime-terminal_<version>_amd64.deb` |
 
 On the first start the portable versions offer to add themselves to the app menu and search.
-The apt and snap packages set this up during installation.
+The apt package sets this up during installation.
 
 The Windows exe is not code-signed, so SmartScreen shows a warning on the first start
 (*More info → Run anyway*).
@@ -95,12 +89,9 @@ npm run dist:win     # portable exe (on Windows)
 ```
 
 Releases are built by GitHub Actions: push a tag like `v1.2.3` and GitHub Actions will
-- build the exe, AppImage, deb and snap,
-- create the GitHub release including the signed APT repository files,
-- publish the snap to the Snap Store.
+- build the exe, AppImage and deb,
+- create the GitHub release including the signed APT repository files.
 
-One-time setup for maintainers:
-- APT signing key: `scripts/setup-apt-signing-key.sh`
-- Snap Store credentials: the `SNAPCRAFT_STORE_CREDENTIALS` secret
+One-time setup for maintainers: create the APT signing key with `scripts/setup-apt-signing-key.sh`.
 
 The detailed specification is in [docs/SPEC.md](docs/SPEC.md) (German).

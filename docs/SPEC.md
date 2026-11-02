@@ -65,11 +65,8 @@ sind. Nur so kann ein Tab ohne Verbindungsabbruch in ein anderes Fenster wandern
   - Jedes Release enthält signierte Repository-Dateien: `Packages`, `Packages.gz`, `Release`, `InRelease`, `Release.gpg` und den öffentlichen Schlüssel `prime-terminal.gpg`.
   - `https://github.com/PrimeAPI/prime-terminal/releases/latest/download` dient damit als „flaches“ APT-Repository. GitHub leitet `latest` immer auf das neueste Release weiter, und `apt upgrade` liefert neue Versionen.
   - Signiert wird mit dem Secret `APT_SIGNING_KEY` (einmalig `scripts/setup-apt-signing-key.sh`).
-- **Snap:**
-  - `confinement: classic`. Ein SSH-Client braucht `~/.ssh`, den ssh-agent und die Shells des Benutzers.
-  - Bei jedem Tag wird der Snap in den Kanal `stable` hochgeladen (Secret `SNAPCRAFT_STORE_CREDENTIALS`).
-  - Der Snap nutzt dieselbe Konfiguration in `~/.config/prime-terminal` wie die anderen Varianten.
-- Fehlt eines der Secrets, wird der jeweilige Schritt mit einer Warnung übersprungen. Das Release entsteht trotzdem.
+- Fehlt das Secret, wird der APT-Schritt mit einer Warnung übersprungen. Das Release entsteht trotzdem.
+- Snap ist vorerst nicht vorgesehen. Für Snap braucht es ein Snap-Store-Konto und eine manuelle Freigabe für „classic“-Confinement durch Canonical. Erkennt die App, dass sie als Snap läuft, nutzt sie trotzdem `~/.config/prime-terminal` und keine eigene Desktop-Integration.
 
 ---
 
