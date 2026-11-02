@@ -72,7 +72,7 @@ export class PrimeApp {
     private readonly loadRenderer: (win: BrowserWindow) => void
   ) {
     this.stores = createConfigStores(configDir)
-    this.desktop = new DesktopIntegration(join(configDir, 'desktop-integration.json'), () => this.stores.servers.value)
+    this.desktop = new DesktopIntegration(join(configDir, 'desktop-integration.json'), this.stores.servers.file, () => this.stores.servers.value)
     this.tunnels = new TunnelManager({
       getSet: (id) => this.stores.sets.value.sets.find((s) => s.id === id),
       resolveHops: (set) => resolveSetHops(set, this.stores.servers.value),

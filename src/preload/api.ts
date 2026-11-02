@@ -18,8 +18,11 @@ export interface DesktopIntegrationStatus {
   supported: boolean
   platform: string
   enabled: boolean
-  serverLaunchers: boolean
+  searchProvider: boolean
   cliCommand: boolean
+  /** 'user': no password needed, 'system': asks for the admin password once */
+  searchProviderSupport: 'user' | 'system' | 'unavailable'
+  searchProviderNote: string
   /** ask once on the first start of the portable build */
   askOnStart: boolean
   command: string[]
@@ -49,7 +52,7 @@ export interface PtApi {
   }
   desktop: {
     get(): Promise<DesktopIntegrationStatus>
-    apply(opts: { serverLaunchers: boolean; cliCommand: boolean }): Promise<SaveResult>
+    apply(opts: { searchProvider: boolean; cliCommand: boolean }): Promise<SaveResult>
     remove(): Promise<SaveResult>
     dismiss(): void
   }

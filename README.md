@@ -26,8 +26,9 @@ Cross-building the Windows exe on Linux is not supported (native modules).
 ## Desktop integration & command line
 
 On the first start of the AppImage / portable exe the app offers to add itself to the app menu and
-desktop search (Linux: `~/.local/share/applications`, Windows: Start menu), optionally with one
-launcher per server and a `primeterminal` command. Change it later via ≡ → *Desktop integration…*.
+desktop search (Linux: `~/.local/share/applications`, Windows: Start menu), optionally with a
+GNOME search provider (saved servers appear as search results of Prime Terminal) and a
+`primeterminal` command. Change it later via ≡ → *Desktop integration…*.
 
 ```bash
 primeterminal web-01            # saved server by name (or its host)

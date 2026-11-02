@@ -1,8 +1,7 @@
 // Pure generators for desktop integration files (Linux .desktop entries, CLI wrapper, names).
 
 import { join } from 'node:path'
-import type { ServersDoc, Server } from '../../shared/types'
-import { folderPath } from '../../shared/folders'
+import type { ServersDoc } from '../../shared/types'
 
 export const APP_ID = 'prime-terminal'
 export const CLI_NAME = 'primeterminal'
@@ -34,11 +33,6 @@ export function windowsShortcutName(name: string): string {
   return n || 'server'
 }
 
-/** Short, stable file-name part for a server launcher. */
-export const serverSlug = (id: string) => id.split('-')[0].replace(/[^A-Za-z0-9_]/g, '').slice(0, 12) || 'server'
-
-const subtitle = (s: Server) => (s.type === 'ssh' ? `SSH ${s.username}@${s.host}${s.port !== 22 ? ':' + s.port : ''}` : 'Local shell')
-
 export interface LinuxPlanInput {
   home: string
   /** command that starts this app (AppImage path, or electron + app dir in development) */
@@ -47,7 +41,6 @@ export interface LinuxPlanInput {
   iconSizes: number[]
   /** directory with <size>x<size>.png files */
   iconDir: string
-  serverLaunchers: boolean
   cliCommand: boolean
 }
 
@@ -60,10 +53,9 @@ export interface PlannedFile {
 export interface LinuxPlan {
   files: PlannedFile[]
   copies: { from: string; to: string }[]
-  /** desktop file names to group in a GNOME app folder */
-  appFolderApps: string[]
 }
 
+/** Launcher (with servers as right-click actions), icons and the optional CLI wrapper. */
 export function linuxPlan(i: LinuxPlanInput): LinuxPlan {
   const apps = join(i.home, '.local/share/applications')
   const servers = i.servers.servers.filter((s) => !(s.type === 'local' && s.hidden))
@@ -91,34 +83,6 @@ export function linuxPlan(i: LinuxPlanInput): LinuxPlan {
   ].join('\n') + '\n'
 
   const files: PlannedFile[] = [{ path: join(apps, `${APP_ID}.desktop`), content: main }]
-  const appFolderApps: string[] = []
-
-  if (i.serverLaunchers) {
-    for (const s of servers) {
-      const file = `${APP_ID}-server-${serverSlug(s.id)}.desktop`
-      const kw = s.type === 'ssh' ? ['ssh', s.host, s.username] : ['shell', 'local']
-      if (s.folderId) kw.push(folderPath(s.folderId, i.servers))
-      files.push({
-        path: join(apps, file),
-        content:
-          [
-            '[Desktop Entry]',
-            'Type=Application',
-            `Name=${value(s.name)}`,
-            `GenericName=${value(subtitle(s))}`,
-            `Comment=Open ${value(s.name)} in Prime Terminal`,
-            `Exec=${execLine([...i.command, `--id=${s.id}`])}`,
-            `Icon=${APP_ID}`,
-            'Terminal=false',
-            'Categories=Network;',
-            `Keywords=${kw.filter(Boolean).map((k) => keyword(k) + ';').join('')}`,
-            `StartupWMClass=${APP_ID}`
-          ].join('\n') + '\n'
-      })
-      appFolderApps.push(file)
-    }
-  }
-
   if (i.cliCommand) files.push({ path: join(i.home, '.local/bin', CLI_NAME), content: cliScript(i.command), mode: 0o755 })
 
   const copies = i.iconSizes.map((n) => ({
@@ -126,5 +90,5 @@ export function linuxPlan(i: LinuxPlanInput): LinuxPlan {
     to: join(i.home, `.local/share/icons/hicolor/${n}x${n}/apps/${APP_ID}.png`)
   }))
 
-  return { files, copies, appFolderApps }
+  return { files, copies }
 }

@@ -479,19 +479,21 @@ Präzisierungen und Abweichungen gegenüber dem Text oben:
 Beim **ersten Start der AppImage bzw. portablen exe** fragt die App einmal nach. Dort lässt sich die Integration auch später ändern oder entfernen.
 Alle erzeugten Dateien werden protokolliert (`desktop-integration.json`) und bei jedem Start neu geschrieben, falls die Datei verschoben wurde. Ebenso nach jeder Änderung an der Serverliste.
 
-**Linux (GNOME u. a.)**, alles im Benutzerprofil, ohne root:
+**Linux (GNOME u. a.)**, alles im Benutzerprofil:
 - `~/.local/share/applications/prime-terminal.desktop` mit Icon in `~/.local/share/icons/hicolor`. Die App erscheint in der Suche (Super-Taste) und im Dock mit dem richtigen Icon.
 - **Rechtsklick auf den Launcher:** „New Window“ und bis zu 20 Server zum direkten Verbinden.
-- **Server in der Suche (optional):** ein Launcher pro Server (`prime-terminal-server-*.desktop`), durchsuchbar nach Name, Host, User und Ordner.
-  - Im App-Raster gruppiert im Ordner „Prime Terminal servers“ (per `gsettings`, nur GNOME).
+- **Server in der GNOME-Suche (optional, GNOME Search Provider):** Nach Super + Suchbegriff erscheinen passende Server als Treffer *unter Prime Terminal*, wie bei „Einstellungen“ oder „Dateien“. Es entstehen keine eigenen Apps pro Server.
+  - Gesucht wird in Name, Host, User und Ordnerpfad. Enter oder Klick verbindet.
+  - „Suche in App starten“ öffnet Prime Terminal mit dem Suchbegriff (Quick-Connect).
+  - Umsetzung: ein kleines Python-Skript (`~/.local/share/prime-terminal/search-provider.py`, braucht python3-gi). Es startet per D-Bus-Aktivierung nur bei Bedarf, liest `servers.json` bei jeder Suche und beendet sich nach 60 s Leerlauf. Electron startet dafür nicht.
+  - Registrierung: GNOME lädt `*.search-provider.ini` nur aus seinen `XDG_DATA_DIRS`. Liegt dort ein beschreibbarer Ordner im Home (z. B. `~/.local/share/flatpak/exports/share`), geht es ohne Passwort. Sonst fragt die App beim Aktivieren **einmal** nach dem Administrator-Passwort (`pkexec`, Ziel `/usr/local/share/gnome-shell/search-providers`).
 - **`primeterminal`-Befehl (optional):** `~/.local/bin/primeterminal`.
-
-Ein echter GNOME-Search-Provider (D-Bus) ist bewusst **nicht** umgesetzt: GNOME lädt Provider nur aus systemweiten Verzeichnissen (root nötig), das passt nicht zu einer portablen App. Die Server-Launcher liefern dasselbe Ergebnis: Servername tippen, Enter, verbunden.
+- Server-Launcher und App-Ordner einer früheren Zwischenversion werden automatisch entfernt.
 
 **Windows**:
-- Startmenü-Ordner „Prime Terminal“ (damit von der Windows-Suche gefunden), optional mit Unterordner „Servers“ mit einer Verknüpfung pro Server.
+- Startmenü-Eintrag „Prime Terminal“, damit die Windows-Suche die App findet.
 - `primeterminal.cmd` in `%LOCALAPPDATA%\Microsoft\WindowsApps` (standardmäßig im PATH).
-- Die **Jump-List** (Rechtsklick aufs Taskbar-Icon) zeigt die Server immer, auch ohne Integration.
+- Die **Jump-List** (Rechtsklick aufs Taskbar-Icon) zeigt die Server zum direkten Verbinden, auch ohne Integration.
 
 ### 16.3 Kommandozeile
 ```

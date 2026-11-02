@@ -18,7 +18,6 @@ const plan = (opts: Partial<Parameters<typeof linuxPlan>[0]> = {}) =>
     servers: doc,
     iconSizes: [16, 256],
     iconDir: '/res/icons',
-    serverLaunchers: true,
     cliCommand: true,
     ...opts
   })
@@ -52,14 +51,10 @@ describe('linuxPlan', () => {
     expect(main.content).toContain('[Desktop Action server-2]\nName=db\nExec="/opt/apps/Prime Terminal.AppImage" "--id=aa"\n')
   })
 
-  it('creates one searchable launcher per server and lists them for the app folder', () => {
-    const p = plan()
-    const web = p.files.find((f) => f.path.endsWith('prime-terminal-server-0b5c1e9a.desktop'))!
-    expect(web.content).toContain('Name=web "01"\n')
-    expect(web.content).toContain('GenericName=SSH deploy@web.example.com\n')
-    expect(web.content).toContain('Keywords=ssh;web.example.com;deploy;Prod;\n')
-    expect(web.content).toContain('Exec="/opt/apps/Prime Terminal.AppImage" "--id=0b5c1e9a-1111-4222-8333-444455556666"\n')
-    expect(p.appFolderApps).toEqual(expect.arrayContaining(['prime-terminal-server-0b5c1e9a.desktop', 'prime-terminal-server-aa.desktop']))
+  it('does not create a launcher per server (servers come from the search provider)', () => {
+    expect(plan().files.filter((f) => f.path.endsWith('.desktop')).map((f) => f.path)).toEqual([
+      '/home/me/.local/share/applications/prime-terminal.desktop'
+    ])
   })
 
   it('installs icons and the primeterminal command', () => {
@@ -71,10 +66,9 @@ describe('linuxPlan', () => {
     expect(p.files.find((f) => f.path === '/home/me/.local/bin/primeterminal')).toMatchObject({ mode: 0o755 })
   })
 
-  it('leaves out server launchers and the command when disabled', () => {
-    const p = plan({ serverLaunchers: false, cliCommand: false })
+  it('leaves out the command when disabled', () => {
+    const p = plan({ cliCommand: false })
     expect(p.files.map((f) => f.path)).toEqual(['/home/me/.local/share/applications/prime-terminal.desktop'])
-    expect(p.appFolderApps).toEqual([])
   })
 
   it('caps the number of right-click actions', () => {
