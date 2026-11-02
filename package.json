@@ -1,7 +1,7 @@
 {
   "name": "prime-terminal",
   "productName": "Prime Terminal",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Portable cross-platform SSH client with tabs, proxy jumps and port forwarding sets",
   "author": {
     "name": "Iain Schmidt",
