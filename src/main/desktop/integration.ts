@@ -57,6 +57,7 @@ const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512]
 /** App-grid folder created by an earlier version (per-server launchers); cleaned up. */
 const OLD_APP_FOLDER = 'prime-terminal-servers'
 const SYSTEM_DATA_DIR = '/usr/local/share'
+const SYSTEM_DESKTOP_FILE = '/usr/share/applications/prime-terminal.desktop'
 
 const run = (cmd: string, args: string[]) =>
   new Promise<{ ok: boolean; out: string }>((resolve) =>
@@ -141,8 +142,22 @@ export class DesktopIntegration {
     return !!(process.env.APPIMAGE || process.env.PORTABLE_EXECUTABLE_FILE)
   }
 
+  /**
+   * The .deb package provides launcher, search provider and command system-wide. A launcher with the
+   * same id in ~/.local/share/applications would hide the package's one, so user-level integration
+   * is never written (and cleaned up) while the package is installed – also when an AppImage runs.
+   */
   private installed(): boolean {
-    return process.platform === 'linux' && app.isPackaged && !process.env.APPIMAGE
+    return process.platform === 'linux' && existsSync(SYSTEM_DESKTOP_FILE)
+  }
+
+  /** Remove a user-level integration that a system package now replaces. */
+  private async retireUserIntegration(): Promise<void> {
+    for (const f of this.state.files) rmSync(f, { force: true })
+    await this.setOldAppFolderGone()
+    await this.refreshLinux()
+    this.state = { ...this.state, enabled: false, asked: true, files: [] }
+    this.save()
   }
 
   iconDir(): string {
@@ -168,7 +183,7 @@ export class DesktopIntegration {
       enabled: this.state.enabled,
       searchProvider: this.state.searchProvider,
       cliCommand: this.state.cliCommand,
-      askOnStart: supported && !this.state.asked && !this.state.enabled && this.portable(),
+      askOnStart: supported && !this.state.asked && !this.state.enabled && this.portable() && !this.installed(),
       installed: this.installed(),
       command: this.command(),
       portable: this.portable(),
@@ -183,6 +198,7 @@ export class DesktopIntegration {
   }
 
   async apply(opts: IntegrationOptions): Promise<void> {
+    if (this.installed()) throw new Error('Prime Terminal is installed as a package – the desktop integration is already set up.')
     this.state = { ...this.state, ...opts, enabled: true, asked: true }
     try {
       await this.write(true)
@@ -206,6 +222,10 @@ export class DesktopIntegration {
   /** Re-generate after server changes or when the AppImage/exe was moved. Debounced. */
   scheduleSync(delay = 1500): void {
     if (process.platform === 'win32') this.updateJumpList()
+    if (this.installed()) {
+      if (this.state.enabled || this.state.files.length) void this.retireUserIntegration()
+      return
+    }
     if (!this.state.enabled) return
     if (this.syncTimer) clearTimeout(this.syncTimer)
     this.syncTimer = setTimeout(() => {
