@@ -172,20 +172,31 @@ export function App() {
     const r = await pt.ui.contextMenu([
       { id: 'quick', label: 'New tab…', accelerator: kb.newTab },
       { id: 'window', label: 'New window', accelerator: kb.newWindow },
-      { id: 'sidebar', label: 'Show server list', type: 'checkbox', checked: sidebar, accelerator: kb.toggleSidebar },
-      { type: 'separator' },
-      { id: 'sets', label: 'Port forwarding sets…' },
-      { id: 'setsjson', label: 'Edit forward-sets.json…' },
       { type: 'separator' },
       { id: 'newserver', label: 'New server…' },
-      { id: 'import', label: 'Import from ~/.ssh/config' },
-      { id: 'serversjson', label: 'Edit servers.json…' },
+      { id: 'newfolder', label: 'New folder…' },
+      { id: 'sets', label: 'Port forwarding sets…' },
       { type: 'separator' },
-      { id: 'settings', label: 'Settings (settings.json)…' },
-      { type: 'separator' },
-      { id: 'desktop', label: 'Desktop integration…' },
+      {
+        label: 'Import',
+        submenu: [
+          { id: 'importcfg', label: 'Configuration backup (.ptbackup)…' },
+          { id: 'import', label: 'Hosts from ~/.ssh/config' }
+        ]
+      },
       { id: 'export', label: 'Export configuration…' },
-      { id: 'importcfg', label: 'Import configuration…' }
+      { type: 'separator' },
+      { id: 'sidebar', label: 'Show server list', type: 'checkbox', checked: sidebar, accelerator: kb.toggleSidebar },
+      { id: 'settings', label: 'Settings…' },
+      { id: 'desktop', label: 'Desktop integration…' },
+      {
+        label: 'Edit config files',
+        submenu: [
+          { id: 'serversjson', label: 'servers.json' },
+          { id: 'setsjson', label: 'forward-sets.json' },
+          { id: 'settingsjson', label: 'settings.json' }
+        ]
+      }
     ])
     if (r === 'quick') setOverlay({ kind: 'quick' })
     else if (r === 'window') pt.windows.newWindow()
@@ -194,7 +205,8 @@ export function App() {
     else if (r === 'setsjson') setOverlay({ kind: 'file', file: 'sets' })
     else if (r === 'newserver') setOverlay({ kind: 'server', server: null })
     else if (r === 'serversjson') setOverlay({ kind: 'file', file: 'servers' })
-    else if (r === 'settings') setOverlay({ kind: 'file', file: 'settings' })
+    else if (r === 'settings' || r === 'settingsjson') setOverlay({ kind: 'file', file: 'settings' })
+    else if (r === 'newfolder') setOverlay({ kind: 'folder', folder: null })
     else if (r === 'desktop') setOverlay({ kind: 'desktop' })
     else if (r === 'export') setOverlay({ kind: 'backup', mode: 'export' })
     else if (r === 'importcfg') setOverlay({ kind: 'backup', mode: 'import' })
@@ -244,13 +256,14 @@ export function App() {
               <button
                 className="icon"
                 data-tunnel-button
-                title={`Port forwarding${runningCount ? ` (${runningCount} active)` : ''}`}
+                title={`Port forwarding${runningCount ? ` – ${runningCount} running` : ''}`}
                 onClick={() => setTunnelOpen((v) => !v)}
               >
-                ⇄{tunnelState !== 'off' && <span className={'tunnel-indicator state-dot ' + tunnelState} />}
+                <TunnelIcon />
+                {tunnelState !== 'off' && <span className={'tunnel-indicator state-dot ' + tunnelState} />}
               </button>
               <button className="icon" title="Menu" onClick={() => void mainMenu()}>
-                ≡
+                <MenuIcon />
               </button>
               {tunnelOpen && (
                 <TunnelPopup
@@ -371,5 +384,21 @@ export function App() {
         </div>
       )}
     </div>
+  )
+}
+
+function TunnelIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 5h10M9.5 2.5 12 5 9.5 7.5M14 11H4M6.5 8.5 4 11l2.5 2.5" />
+    </svg>
+  )
+}
+
+function MenuIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
+    </svg>
   )
 }

@@ -224,6 +224,7 @@ export interface MenuItemSpec {
   checked?: boolean
   enabled?: boolean
   accelerator?: string
+  submenu?: MenuItemSpec[]
 }
 
 export type OpenTarget = { serverId: string } | { adhoc: { username?: string; host: string; port?: number }; save?: boolean }

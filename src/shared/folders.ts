@@ -86,3 +86,52 @@ export function deleteFolder(doc: ServersDoc, id: string): ServersDoc {
     servers: doc.servers.map((s) => (s.folderId === id ? withParent(s, 'folderId', up) : s))
   }
 }
+
+/** Where dragged items are dropped: next to an item ("s:<id>" / "f:<id>") or into a folder (null = top level). */
+export type DropTarget = { position: 'before' | 'after'; key: string } | { position: 'into'; folderId: string | null }
+
+/** Move items (keys "s:<serverId>" / "f:<folderId>") to `target`; reorders within their new parent. */
+export function placeItemsChecked(doc: ServersDoc, items: string[], target: DropTarget): { doc: ServersDoc; skipped: number } {
+  const serverIds = new Set(items.filter((k) => k.startsWith('s:')).map((k) => k.slice(2)))
+  let folderIds = new Set(items.filter((k) => k.startsWith('f:')).map((k) => k.slice(2)))
+
+  // parent of the drop location
+  let parent: string | null
+  if (target.position === 'into') parent = target.folderId
+  else if (target.key.startsWith('s:')) parent = doc.servers.find((s) => s.id === target.key.slice(2))?.folderId ?? null
+  else parent = doc.folders.find((f) => f.id === target.key.slice(2))?.parentId ?? null
+
+  // a folder cannot go into itself or one of its subfolders
+  let skipped = 0
+  folderIds = new Set(
+    [...folderIds].filter((id) => {
+      const bad = (parent && isDescendant(parent, id, doc)) || (target.position !== 'into' && target.key === `f:${id}`)
+      if (bad) skipped++
+      return !bad
+    })
+  )
+
+  const reparent = <T extends { id: string }>(list: T[], moving: Set<string>, key: 'folderId' | 'parentId') =>
+    list.map((x) => (moving.has(x.id) ? withParent(x as T & { folderId?: string; parentId?: string }, key, parent) : x))
+
+  const reposition = <T extends { id: string }>(list: T[], moving: Set<string>, anchorKey: string | null, prefix: string): T[] => {
+    if (!moving.size) return list
+    const moved = list.filter((x) => moving.has(x.id))
+    const rest = list.filter((x) => !moving.has(x.id))
+    let at = rest.length
+    if (anchorKey?.startsWith(prefix) && target.position !== 'into') {
+      const i = rest.findIndex((x) => x.id === anchorKey.slice(2))
+      if (i >= 0) at = target.position === 'before' ? i : i + 1
+    }
+    return [...rest.slice(0, at), ...moved, ...rest.slice(at)]
+  }
+
+  const anchor = target.position === 'into' ? null : target.key
+  return {
+    skipped,
+    doc: {
+      folders: reposition(reparent(doc.folders, folderIds, 'parentId'), folderIds, anchor, 'f:'),
+      servers: reposition(reparent(doc.servers, serverIds, 'folderId'), serverIds, anchor, 's:')
+    }
+  }
+}

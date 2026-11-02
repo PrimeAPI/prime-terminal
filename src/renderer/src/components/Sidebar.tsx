@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { Folder, MenuItemSpec, Server, ServersDoc } from '../../../shared/types'
 import { fuzzyFilter } from '../../../shared/fuzzy'
-import { deleteFolder, folderTree, isDescendant, moveFolder, moveServers, type FolderNode } from '../../../shared/folders'
+import { deleteFolder, folderTree, isDescendant, moveFolder, moveServers, placeItemsChecked, type DropTarget, type FolderNode } from '../../../shared/folders'
 import { newId } from '../../../shared/ids'
 import { pt } from '../lib/api'
 import { useLocalStorage } from '../lib/hooks'
@@ -56,7 +56,8 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
   const [showHidden, setShowHidden] = useState(false)
   const [selected, setSelected] = useState<ItemKey[]>([])
   const [anchor, setAnchor] = useState<ItemKey | null>(null)
-  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  /** current drop indicator: a row key with position, or a folder/root to drop into */
+  const [dropAt, setDropAt] = useState<{ key: string; position: 'before' | 'after' | 'into' } | null>(null)
 
   const save = async (next: ServersDoc) => {
     const r = await pt.config.saveServers(next)
@@ -107,10 +108,10 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
 
   // ---------- actions ----------
 
-  const drop = async (items: ItemKey[], target: string | null) => {
-    const r = moveItems(doc, items, target)
+  const drop = async (items: ItemKey[], target: DropTarget) => {
+    const r = placeItemsChecked(doc, items, target)
     if (r.skipped) notify(`${r.skipped} folder${r.skipped > 1 ? 's' : ''} cannot be moved into ${r.skipped > 1 ? 'themselves' : 'itself'}`, true)
-    if (target) setCollapsed({ ...collapsed, [target]: false })
+    if (target.position === 'into' && target.folderId) setCollapsed({ ...collapsed, [target.folderId]: false })
     await save(r.doc)
   }
 
@@ -224,31 +225,57 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
     }
   })
 
-  const dropProps = (target: string | null) => {
-    const id = target ?? ROOT
+  const isOurDrag = (e: React.DragEvent) => e.dataTransfer.types.includes(DRAG_MIME)
+
+  const finishDrop = (e: React.DragEvent, target: DropTarget) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDropAt(null)
+    try {
+      const items = JSON.parse(e.dataTransfer.getData(DRAG_MIME)) as ItemKey[]
+      if (items.length) void drop(items, target)
+    } catch {
+      // not ours
+    }
+  }
+
+  /** Drop zone of a row: servers split in before/after, folders in before/into(/after when collapsed). */
+  const rowDropProps = (key: ItemKey, folder?: { id: string; collapsed: boolean }) => {
+    const positionOf = (e: React.DragEvent): 'before' | 'after' | 'into' => {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const y = (e.clientY - r.top) / r.height
+      if (!folder) return y < 0.5 ? 'before' : 'after'
+      if (y < 0.25) return 'before'
+      if (y > 0.75 && folder.collapsed) return 'after'
+      return 'into'
+    }
     return {
       onDragOver: (e: React.DragEvent) => {
-        if (!e.dataTransfer.types.includes(DRAG_MIME)) return
+        if (!isOurDrag(e)) return
         e.preventDefault()
         e.stopPropagation()
-        if (dropTarget !== id) setDropTarget(id)
-      },
-      onDragLeave: (e: React.DragEvent) => {
-        if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropTarget(null)
+        const position = positionOf(e)
+        if (dropAt?.key !== key || dropAt.position !== position) setDropAt({ key, position })
       },
       onDrop: (e: React.DragEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setDropTarget(null)
-        try {
-          const items = JSON.parse(e.dataTransfer.getData(DRAG_MIME)) as ItemKey[]
-          if (items.length) void drop(items, target)
-        } catch {
-          // not ours
-        }
+        const position = positionOf(e)
+        finishDrop(e, position === 'into' ? { position, folderId: folder!.id } : { position, key })
       }
     }
   }
+
+  /** Drop into the top level (group headers, empty space). */
+  const rootDropProps = (marker: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!isOurDrag(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (dropAt?.key !== marker) setDropAt({ key: marker, position: 'into' })
+    },
+    onDrop: (e: React.DragEvent) => finishDrop(e, { position: 'into', folderId: null })
+  })
+
+  const dropCls = (key: string) => (dropAt?.key === key ? ` drop-${dropAt.position}` : '')
 
   // ---------- rendering ----------
 
@@ -259,11 +286,12 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
     return (
       <div
         key={s.id}
-        className={'item' + (selected.includes(key) ? ' selected' : '')}
+        className={'item' + (selected.includes(key) ? ' selected' : '') + dropCls(key)}
         style={{ paddingLeft: 22 + depth * 14 }}
         title={sub(s)}
         tabIndex={0}
         {...dragProps(key)}
+        {...rowDropProps(key)}
         onClick={(e) => select(e, key)}
         onDoubleClick={(e) => onOpen(s.id, e.shiftKey)}
         onContextMenu={(e) => {
@@ -292,12 +320,13 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
     const key = folderKey(f.id)
     const closed = isCollapsed(f.id)
     return (
-      <div key={f.id} {...dropProps(f.id)} className={dropTarget === f.id ? 'drop-zone active' : 'drop-zone'}>
+      <div key={f.id}>
         <div
-          className={'folder-row' + (selected.includes(key) ? ' selected' : '')}
+          className={'folder-row' + (selected.includes(key) ? ' selected' : '') + dropCls(key)}
           style={{ paddingLeft: 6 + depth * 14 }}
           tabIndex={0}
           {...dragProps(key)}
+          {...rowDropProps(key, { id: f.id, collapsed: closed })}
           onClick={(e) => select(e, key)}
           onDoubleClick={() => toggle(f.id)}
           onContextMenu={(e) => {
@@ -337,7 +366,7 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
   }
 
   const groupHeader = (key: string, title: string, extra?: ReactNode) => (
-    <div className={'group-header' + (dropTarget === ROOT && key === ROOT ? ' drop-target' : '')} onClick={() => toggle(key)}>
+    <div className={'group-header' + dropCls(`root:${key}`)} onClick={() => toggle(key)} {...rootDropProps(`root:${key}`)}>
       <span className="caret">{isCollapsed(key) ? '▸' : '▾'}</span>
       <span style={{ flex: 1 }}>{title}</span>
       {extra}
@@ -360,7 +389,11 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
       <div
         className="tree"
         tabIndex={-1}
-        {...dropProps(null)}
+        {...rootDropProps('root:tree')}
+        onDragLeave={(e) => {
+          if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropAt(null)
+        }}
+        onDragEnd={() => setDropAt(null)}
         onClick={(e) => {
           if (e.target === e.currentTarget) setSelected([])
         }}
@@ -374,14 +407,14 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
       >
         {tree.folders.map((n) => folderRow(n, 0))}
         {(topSsh.length > 0 || tree.folders.length === 0) && (
-          <div {...dropProps(null)}>
+          <div>
             {groupHeader(ROOT, tree.folders.length ? 'Ungrouped' : 'Servers')}
             {!isCollapsed(ROOT) && topSsh.map((s) => serverRow(s, 0))}
             {topSsh.length === 0 && !q && <div className="hint" style={{ padding: '2px 22px 6px' }}>No servers yet</div>}
           </div>
         )}
         {(topLocal.length > 0 || hiddenCount > 0) && (
-          <div {...dropProps(null)}>
+          <div>
             {groupHeader(
               '__local',
               'Local',
@@ -401,7 +434,7 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
             {!isCollapsed('__local') && topLocal.map((s) => serverRow(s, 0))}
           </div>
         )}
-        <div className="tree-spacer" {...dropProps(null)} />
+        <div className={'tree-spacer' + dropCls('root:tree')} />
       </div>
       <div className="footer">
         <button onClick={() => onEdit(null)} title="New server">
@@ -415,16 +448,6 @@ export function Sidebar({ doc, onOpen, onEdit, onFolderDialog, onMove, notify }:
           title="New folder (inside the selected folder)"
         >
           + Folder
-        </button>
-        <button
-          onClick={async () => {
-            const r = await pt.config.importSshConfig()
-            if (!r.ok) return notify(r.error, true)
-            notify(`Imported ${r.added} server${r.added === 1 ? '' : 's'} from ~/.ssh/config${r.warnings.length ? ` (${r.warnings.join('; ')})` : ''}`)
-          }}
-          title="Import hosts from ~/.ssh/config"
-        >
-          Import
         </button>
       </div>
     </aside>

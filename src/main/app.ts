@@ -691,21 +691,23 @@ export class PrimeApp {
             resolve(v)
           }
         }
-        const menu = Menu.buildFromTemplate(
-          items.map((i) =>
+        const toTemplate = (list: MenuItemSpec[]): Electron.MenuItemConstructorOptions[] =>
+          list.map((i) =>
             i.type === 'separator'
               ? { type: 'separator' as const }
-              : {
-                  label: i.label,
-                  type: i.type === 'checkbox' ? ('checkbox' as const) : ('normal' as const),
-                  checked: i.checked,
-                  enabled: i.enabled !== false,
-                  accelerator: i.accelerator,
-                  registerAccelerator: false,
-                  click: () => finish(i.id ?? null)
-                }
+              : i.submenu
+                ? { label: i.label, enabled: i.enabled !== false, submenu: toTemplate(i.submenu) }
+                : {
+                    label: i.label,
+                    type: i.type === 'checkbox' ? ('checkbox' as const) : ('normal' as const),
+                    checked: i.checked,
+                    enabled: i.enabled !== false,
+                    accelerator: i.accelerator,
+                    registerAccelerator: false,
+                    click: () => finish(i.id ?? null)
+                  }
           )
-        )
+        const menu = Menu.buildFromTemplate(toTemplate(items))
         menu.popup({ window: win, callback: () => setTimeout(() => finish(null), 50) })
       })
     })
