@@ -169,6 +169,9 @@ function connectHop(server: SshServer, deps: ConnectDeps, sock?: Duplex): Promis
     })
     client.on('error', (err: Error & { level?: string }) => {
       if (settled) return
+      // an unreachable/empty agent (e.g. Pageant or the Windows OpenSSH agent not running) is not
+      // fatal: ssh2 continues with the next authentication method by itself
+      if (err.level === 'agent') return
       if (failure) return fail(failure)
       if (err.level === 'client-authentication') {
         return fail(new Error(`Authentication failed for ${hopLabel(server)}`))

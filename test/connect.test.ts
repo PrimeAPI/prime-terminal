@@ -192,6 +192,16 @@ describe('connectChain', () => {
     conn.close()
   })
 
+  it('skips an agent that is not running and continues with keys/password (e.g. Pageant on Windows)', async () => {
+    const key = genKey()
+    const s = await server({ password: 'pw', authorizedKey: key.public })
+    const { deps } = makeDeps()
+    deps.agentPaths = ['/nonexistent/agent.sock']
+    const conn = await connectChain([hop('t', s.port, { method: 'auto', password: 'pw' })], deps)
+    conn.close()
+    expect(s.authLog).toContain('password')
+  })
+
   it('reports cancelled authentication clearly', async () => {
     const s = await server({ password: 'pw' })
     const { deps } = makeDeps({ secret: async () => null })
