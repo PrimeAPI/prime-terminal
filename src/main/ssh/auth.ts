@@ -3,7 +3,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { utils } from 'ssh2'
+import { utils } from './ssh2'
 import type { SshServer } from '../../shared/types'
 import type { Prompter } from './connect'
 

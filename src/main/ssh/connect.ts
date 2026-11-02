@@ -2,7 +2,8 @@
 
 import { EventEmitter } from 'node:events'
 import type { Duplex } from 'node:stream'
-import { Client, type ConnectConfig } from 'ssh2'
+import type { ConnectConfig } from 'ssh2'
+import { Client } from './ssh2'
 import type { PromptRequest, SshServer } from '../../shared/types'
 import { buildAttempts, makeAuthHandler, type AuthHandlerState } from './auth'
 import { fingerprintSha256, keyTypeOf, type KnownHosts } from './knownHosts'
