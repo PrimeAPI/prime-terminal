@@ -2,6 +2,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, Menu } from 'electron'
 import { PrimeApp } from './app'
+import { APP_USER_MODEL_ID } from './desktop/integration'
+import { parseLaunchArgs, USAGE } from '../shared/launch'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const configDir = join(app.getPath('appData'), 'prime-terminal')
@@ -9,17 +11,45 @@ const configDir = join(app.getPath('appData'), 'prime-terminal')
 app.setPath('userData', join(configDir, 'chromium'))
 app.setName('Prime Terminal')
 
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID)
+
+/** User arguments of a command line (drops the executable and, in development, the app path). */
+function userArgs(argv: string[]): string[] {
+  const rest = argv.slice(1)
+  if (!app.isPackaged) {
+    const i = rest.findIndex((a) => !a.startsWith('-'))
+    if (i >= 0) rest.splice(i, 1)
+  }
+  return rest
+}
+
+const launch = parseLaunchArgs(userArgs(process.argv))
 let primeApp: PrimeApp | null = null
 
-app.whenReady().then(() => {
-  // no application menu: all shortcuts belong to the terminal / our own keybindings
-  Menu.setApplicationMenu(null)
-  primeApp = new PrimeApp(configDir, join(here, '../preload/index.mjs'), (win) => {
-    if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
-    else void win.loadFile(join(here, '../renderer/index.html'))
+if (launch.help) {
+  process.stdout.write(USAGE)
+  app.exit(0)
+} else if (!app.requestSingleInstanceLock()) {
+  // another instance is running: it receives our arguments via 'second-instance'
+  app.exit(0)
+} else {
+  app.on('second-instance', (_e, argv) => {
+    const args = parseLaunchArgs(userArgs(argv))
+    if (args.help) return
+    primeApp?.handleLaunch(args, true)
   })
-  primeApp.start()
-})
+
+  app.whenReady().then(() => {
+    // no application menu: all shortcuts belong to the terminal / our own keybindings
+    Menu.setApplicationMenu(null)
+    primeApp = new PrimeApp(configDir, join(here, '../preload/index.mjs'), (win) => {
+      if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
+      else void win.loadFile(join(here, '../renderer/index.html'))
+    })
+    primeApp.start()
+    primeApp.handleLaunch(launch, false)
+  })
+}
 
 app.on('window-all-closed', () => app.quit())
 

@@ -23,6 +23,20 @@ npm run lint
 
 Cross-building the Windows exe on Linux is not supported (native modules).
 
+## Desktop integration & command line
+
+On the first start of the AppImage / portable exe the app offers to add itself to the app menu and
+desktop search (Linux: `~/.local/share/applications`, Windows: Start menu), optionally with one
+launcher per server and a `primeterminal` command. Change it later via ≡ → *Desktop integration…*.
+
+```bash
+primeterminal web-01            # saved server by name (or its host)
+primeterminal deploy@10.0.0.5   # ad hoc
+primeterminal --new-window a b  # several tabs in a new window
+```
+
+A running instance receives the arguments and opens the tabs there.
+
 ## Where things are stored
 
 `~/.config/prime-terminal/` (Linux) or `%APPDATA%\prime-terminal\` (Windows):

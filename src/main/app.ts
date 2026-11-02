@@ -28,6 +28,8 @@ import { KnownHosts } from './ssh/knownHosts'
 import { importSshConfig } from './ssh/sshConfigImport'
 import { TunnelManager } from './tunnels/tunnelManager'
 import { TabModel } from './windows/tabModel'
+import { DesktopIntegration, type IntegrationOptions } from './desktop/integration'
+import { resolveLaunchTarget, type LaunchArgs } from '../shared/launch'
 
 interface WindowState {
   bounds?: { x: number; y: number; width: number; height: number }
@@ -49,6 +51,9 @@ export class PrimeApp {
   readonly prompts = new PromptService()
   readonly tunnels: TunnelManager
   private windows = new Map<number, BrowserWindow>()
+  readonly desktop: DesktopIntegration
+  /** quick-connect requests from the command line, picked up by the window's renderer */
+  private pendingQuick = new Map<number, { query: string; message: string }>()
   /** sessions each renderer currently shows (data is only sent for these) */
   private attached = new Map<number, Set<string>>()
   private pendingData = new Map<string, string>()
@@ -67,6 +72,7 @@ export class PrimeApp {
     private readonly loadRenderer: (win: BrowserWindow) => void
   ) {
     this.stores = createConfigStores(configDir)
+    this.desktop = new DesktopIntegration(join(configDir, 'desktop-integration.json'), () => this.stores.servers.value)
     this.tunnels = new TunnelManager({
       getSet: (id) => this.stores.sets.value.sets.find((s) => s.id === id),
       resolveHops: (set) => resolveSetHops(set, this.stores.servers.value),
@@ -96,6 +102,10 @@ export class PrimeApp {
       for (const w of winIds) this.sendTo(w, 'tabs:state', this.tabs.state(w))
     })
     this.tunnels.on('change', (s) => this.broadcast('tunnels:status', s))
+
+    this.stores.servers.on('change', () => this.desktop.scheduleSync())
+    // refresh launchers (e.g. the AppImage was moved) and the Windows jump list
+    this.desktop.scheduleSync(3000)
 
     this.registerIpc()
     this.createWindow()
@@ -205,6 +215,7 @@ export class PrimeApp {
       title: 'Prime Terminal',
       backgroundColor: '#1b1d23',
       autoHideMenuBar: true,
+      icon: join(this.desktop.iconDir(), '256x256.png'),
       webPreferences: { preload: this.preloadPath, contextIsolation: true, sandbox: false, nodeIntegration: false }
     })
     const id = win.webContents.id
@@ -296,6 +307,39 @@ export class PrimeApp {
     if (focused && this.windows.has(focused.webContents.id)) return focused.webContents
     const first = this.windows.values().next().value as BrowserWindow | undefined
     return first?.webContents ?? null
+  }
+
+  // ---------- command line ----------
+
+  /** Open the servers named on the command line (first start or a second `primeterminal …` call). */
+  handleLaunch(args: LaunchArgs, secondInstance: boolean): void {
+    let win: BrowserWindow | undefined
+    if (secondInstance && (args.newWindow || args.targets.length === 0)) win = this.createWindow()
+    else {
+      const focused = BrowserWindow.getFocusedWindow()
+      win = focused && this.windows.has(focused.webContents.id) ? focused : [...this.windows.values()].at(-1)
+    }
+    if (!win) win = this.createWindow()
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    const winId = win.webContents.id
+    for (const t of args.targets) {
+      const r = resolveLaunchTarget(t, this.stores.servers.value)
+      if (r.kind === 'server') this.openSession({ serverId: r.serverId }, winId)
+      else if (r.kind === 'adhoc') this.openSession({ adhoc: r.target }, winId)
+      else {
+        const isId = r.query.startsWith('--id=')
+        const message =
+          r.kind === 'ambiguous'
+            ? `"${r.query}" matches several servers – pick one`
+            : isId
+              ? 'That server no longer exists'
+              : `No server or host "${r.query}"`
+        this.pendingQuick.set(winId, { query: isId ? '' : r.query, message })
+        win.webContents.send('ui:quickConnectRequested')
+      }
+    }
   }
 
   // ---------- sessions ----------
@@ -601,6 +645,30 @@ export class PrimeApp {
     })
 
     on('windows:new', () => this.createWindow())
+    h('ui:takeQuickConnect', (e) => {
+      const p = this.pendingQuick.get(e.sender.id) ?? null
+      this.pendingQuick.delete(e.sender.id)
+      return p
+    })
+
+    h('desktop:get', () => this.desktop.status())
+    h('desktop:apply', async (_e, opts: IntegrationOptions) => {
+      try {
+        await this.desktop.apply(opts)
+        return { ok: true }
+      } catch (err) {
+        return errorResult(err)
+      }
+    })
+    h('desktop:remove', async () => {
+      try {
+        await this.desktop.remove()
+        return { ok: true }
+      } catch (err) {
+        return errorResult(err)
+      }
+    })
+    on('desktop:dismiss', () => this.desktop.dismiss())
     on('windows:setTitle', (e, title: string) => BrowserWindow.fromWebContents(e.sender)?.setTitle(title))
 
     h('tunnels:status', () => this.stores.sets.value.sets.map((s) => this.tunnels.status(s.id)))

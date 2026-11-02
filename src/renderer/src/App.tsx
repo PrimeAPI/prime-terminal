@@ -10,6 +10,7 @@ import { TerminalView, type TerminalHandle } from './components/TerminalView'
 import { Sidebar, moveItems, type ItemKey } from './components/Sidebar'
 import { MoveDialog } from './components/MoveDialog'
 import { BackupDialog } from './components/BackupDialog'
+import { DesktopDialog } from './components/DesktopDialog'
 import { folderPath } from '../../shared/folders'
 import { QuickConnect } from './components/QuickConnect'
 import { ServerDialog } from './components/ServerDialog'
@@ -20,7 +21,8 @@ import { PromptHost } from './components/PromptHost'
 import { TextInputDialog } from './components/TextInputDialog'
 
 type Overlay =
-  | { kind: 'quick' }
+  | { kind: 'quick'; query?: string; message?: string }
+  | { kind: 'desktop'; firstStart?: boolean }
   | { kind: 'server'; server: Server | null; folderId?: string }
   | { kind: 'folder'; folder: Folder | null; parentId?: string }
   | { kind: 'move'; items: ItemKey[] }
@@ -63,6 +65,20 @@ export function App() {
     },
     [notify]
   )
+
+  // command line: unknown/ambiguous targets open quick connect; first start may offer desktop integration
+  useEffect(() => {
+    const take = () =>
+      void pt.ui.takeQuickConnect().then((p) => {
+        if (p) setOverlay({ kind: 'quick', query: p.query, message: p.message })
+      })
+    take()
+    const off = pt.ui.onQuickConnectRequested(take)
+    void pt.desktop.get().then((s) => {
+      if (s.askOnStart) setOverlay((o) => o ?? { kind: 'desktop', firstStart: true })
+    })
+    return off
+  }, [])
 
   // window title
   useEffect(() => {
@@ -167,6 +183,7 @@ export function App() {
       { type: 'separator' },
       { id: 'settings', label: 'Settings (settings.json)…' },
       { type: 'separator' },
+      { id: 'desktop', label: 'Desktop integration…' },
       { id: 'export', label: 'Export configuration…' },
       { id: 'importcfg', label: 'Import configuration…' }
     ])
@@ -178,6 +195,7 @@ export function App() {
     else if (r === 'newserver') setOverlay({ kind: 'server', server: null })
     else if (r === 'serversjson') setOverlay({ kind: 'file', file: 'servers' })
     else if (r === 'settings') setOverlay({ kind: 'file', file: 'settings' })
+    else if (r === 'desktop') setOverlay({ kind: 'desktop' })
     else if (r === 'export') setOverlay({ kind: 'backup', mode: 'export' })
     else if (r === 'importcfg') setOverlay({ kind: 'backup', mode: 'import' })
     else if (r === 'import') {
@@ -276,7 +294,16 @@ export function App() {
         </div>
       </div>
 
-      {overlay?.kind === 'quick' && <QuickConnect servers={config.servers} onOpen={(t, nw) => void open(t, nw)} onClose={() => setOverlay(null)} />}
+      {overlay?.kind === 'quick' && (
+        <QuickConnect
+          servers={config.servers}
+          initialQuery={overlay.query}
+          message={overlay.message}
+          onOpen={(t, nw) => void open(t, nw)}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+      {overlay?.kind === 'desktop' && <DesktopDialog firstStart={overlay.firstStart} onClose={() => setOverlay(null)} notify={notify} />}
       {overlay?.kind === 'server' && (
         <ServerDialog
           doc={config.servers}

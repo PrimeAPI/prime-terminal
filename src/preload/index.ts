@@ -26,6 +26,12 @@ const api: PtApi = {
     exportText: (name, text) => invoke('config:exportText', name, text),
     importText: () => invoke('config:importText')
   },
+  desktop: {
+    get: () => invoke('desktop:get'),
+    apply: (opts) => invoke('desktop:apply', opts),
+    remove: () => invoke('desktop:remove'),
+    dismiss: () => send('desktop:dismiss')
+  },
   backup: {
     export: (password) => invoke('backup:export', password),
     pick: () => invoke('backup:pick'),
@@ -76,7 +82,9 @@ const api: PtApi = {
     contextMenu: (items) => invoke('ui:contextMenu', items),
     clipboardRead: () => invoke('ui:clipboardRead'),
     clipboardWrite: (text) => send('ui:clipboardWrite', text),
-    openExternal: (url) => send('ui:openExternal', url)
+    openExternal: (url) => send('ui:openExternal', url),
+    onQuickConnectRequested: (cb) => on('ui:quickConnectRequested', cb),
+    takeQuickConnect: () => invoke('ui:takeQuickConnect')
   }
 }
 

@@ -14,6 +14,18 @@ import type {
 
 export type SaveResult = { ok: true } | { ok: false; error: string }
 
+export interface DesktopIntegrationStatus {
+  supported: boolean
+  platform: string
+  enabled: boolean
+  serverLaunchers: boolean
+  cliCommand: boolean
+  /** ask once on the first start of the portable build */
+  askOnStart: boolean
+  command: string[]
+  portable: boolean
+}
+
 export interface BackupInfo {
   createdAt: string
   hasSecrets: boolean
@@ -34,6 +46,12 @@ export interface PtApi {
     pickKeyFile(): Promise<string | null>
     exportText(defaultName: string, text: string): Promise<boolean>
     importText(): Promise<string | null>
+  }
+  desktop: {
+    get(): Promise<DesktopIntegrationStatus>
+    apply(opts: { serverLaunchers: boolean; cliCommand: boolean }): Promise<SaveResult>
+    remove(): Promise<SaveResult>
+    dismiss(): void
   }
   backup: {
     /** Shows a save dialog; null = cancelled. Without password, secrets are not exported. */
@@ -89,5 +107,8 @@ export interface PtApi {
     clipboardRead(): Promise<string>
     clipboardWrite(text: string): void
     openExternal(url: string): void
+    /** quick connect requested from the command line (unknown/ambiguous server) */
+    onQuickConnectRequested(cb: () => void): Unsubscribe
+    takeQuickConnect(): Promise<{ query: string; message: string } | null>
   }
 }

@@ -9,13 +9,18 @@ files:
   - package.json
 asarUnpack:
   - node_modules/node-pty/**
+extraResources:
+  - from: build/icons
+    to: icons
 linux:
+  icon: build/icons
   target:
     - target: AppImage
       arch: [x64]
   category: System
   executableName: prime-terminal
 win:
+  icon: build/icon.ico
   target:
     - target: portable
       arch: [x64]

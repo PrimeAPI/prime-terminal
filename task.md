@@ -465,3 +465,44 @@ Präzisierungen und Abweichungen gegenüber dem Text oben:
   - Aus: Bricht die Verbindung ab, geht das Set auf „error: Connection lost“ und wird nicht neu verbunden.
   - Das Umschalten wirkt sofort, auch bei laufenden Sets.
 - Set-Verwaltung: Start/Stop-Buttons in der Set-Liste. Unter „Options“ stehen „Start when the app starts“ und „Reconnect automatically“.
+
+---
+
+## 16. Desktop-Integration und Kommandozeile
+
+### 16.1 Icon
+- App-Icon `>_` (`build/icon.svg`, daraus `build/icons/*.png` und `build/icon.ico`).
+- Unter Windows steckt das Icon in der `.exe`, Taskbar und Jump-List nutzen es (AppUserModelID `dev.prime-terminal.app`).
+- Unter Linux bekommen die Fenster das Icon direkt. GNOME ordnet das Dock-Icon über den Launcher zu (WM_CLASS `prime-terminal` = `StartupWMClass`).
+
+### 16.2 Integration der portablen Builds (Menü ≡ → „Desktop integration…“)
+Beim **ersten Start der AppImage bzw. portablen exe** fragt die App einmal nach. Dort lässt sich die Integration auch später ändern oder entfernen.
+Alle erzeugten Dateien werden protokolliert (`desktop-integration.json`) und bei jedem Start neu geschrieben, falls die Datei verschoben wurde. Ebenso nach jeder Änderung an der Serverliste.
+
+**Linux (GNOME u. a.)**, alles im Benutzerprofil, ohne root:
+- `~/.local/share/applications/prime-terminal.desktop` mit Icon in `~/.local/share/icons/hicolor`. Die App erscheint in der Suche (Super-Taste) und im Dock mit dem richtigen Icon.
+- **Rechtsklick auf den Launcher:** „New Window“ und bis zu 20 Server zum direkten Verbinden.
+- **Server in der Suche (optional):** ein Launcher pro Server (`prime-terminal-server-*.desktop`), durchsuchbar nach Name, Host, User und Ordner.
+  - Im App-Raster gruppiert im Ordner „Prime Terminal servers“ (per `gsettings`, nur GNOME).
+- **`primeterminal`-Befehl (optional):** `~/.local/bin/primeterminal`.
+
+Ein echter GNOME-Search-Provider (D-Bus) ist bewusst **nicht** umgesetzt: GNOME lädt Provider nur aus systemweiten Verzeichnissen (root nötig), das passt nicht zu einer portablen App. Die Server-Launcher liefern dasselbe Ergebnis: Servername tippen, Enter, verbunden.
+
+**Windows**:
+- Startmenü-Ordner „Prime Terminal“ (damit von der Windows-Suche gefunden), optional mit Unterordner „Servers“ mit einer Verknüpfung pro Server.
+- `primeterminal.cmd` in `%LOCALAPPDATA%\Microsoft\WindowsApps` (standardmäßig im PATH).
+- Die **Jump-List** (Rechtsklick aufs Taskbar-Icon) zeigt die Server immer, auch ohne Integration.
+
+### 16.3 Kommandozeile
+```
+primeterminal [--new-window] [ziel ...]
+  ziel = Servername | Host | user@host[:port] | --id=<server-id>
+```
+- **Auflösung:**
+  1. Name (ohne Groß/Klein-Unterscheidung)
+  2. `--id`
+  3. Host bzw. `user@host:port` eines gespeicherten Servers
+  4. sonst Ad-hoc-Verbindung wie bei `ssh`
+- Mehrdeutige Namen oder Unsinn öffnen Quick-Connect mit vorbelegter Suche und Hinweis.
+- **Eine Instanz:** Läuft die App schon, öffnet ein weiterer Aufruf die Tabs im aktiven Fenster (`--new-window` in einem neuen Fenster). Ohne Ziel öffnet ein weiterer Start ein neues Fenster.
+- `primeterminal --help` gibt die Hilfe aus.

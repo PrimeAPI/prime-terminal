@@ -4,6 +4,8 @@ import { fuzzyFilter, parseAdhocTarget } from '../../../shared/fuzzy'
 
 interface Props {
   servers: ServersDoc
+  initialQuery?: string
+  message?: string
   onOpen: (target: OpenTarget, newWindow: boolean) => void
   onClose: () => void
 }
@@ -12,8 +14,8 @@ type Item = { kind: 'server'; server: Server } | { kind: 'adhoc'; save: boolean;
 
 const sub = (s: Server) => (s.type === 'ssh' ? `${s.username}@${s.host}${s.port !== 22 ? ':' + s.port : ''}` : s.shell)
 
-export function QuickConnect({ servers, onOpen, onClose }: Props) {
-  const [q, setQ] = useState('')
+export function QuickConnect({ servers, initialQuery = '', message, onOpen, onClose }: Props) {
+  const [q, setQ] = useState(initialQuery)
   const [sel, setSel] = useState(0)
 
   const items: Item[] = useMemo(() => {
@@ -63,6 +65,7 @@ export function QuickConnect({ servers, onOpen, onClose }: Props) {
             e.stopPropagation()
           }}
         />
+        {message && <div className="quick-message">{message}</div>}
         <ul>
           {items.map((it, i) => (
             <li
