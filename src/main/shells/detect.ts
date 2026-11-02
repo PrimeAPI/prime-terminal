@@ -1,6 +1,7 @@
 // Auto-detection of local shells (task.md 6).
 
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import type { LocalServer, ServersDoc } from '../../shared/types'
 
@@ -23,8 +24,15 @@ export interface DetectEnv {
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-function auto(id: string, name: string, shell: string, args?: string[]): LocalServer {
-  return { id: `local-auto-${id}`, type: 'local', name, shell, ...(args ? { args } : {}), autoDetected: true }
+/** Stable UUID-formatted id derived from a key, so re-detection finds the same entry. */
+export function stableUuid(key: string): string {
+  const h = createHash('sha1').update(key).digest('hex')
+  const variant = ((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`
+}
+
+function auto(key: string, name: string, shell: string, args?: string[]): LocalServer {
+  return { id: stableUuid(`prime-terminal:local-shell:${key}`), type: 'local', name, shell, ...(args ? { args } : {}), autoDetected: true }
 }
 
 export function detectShells(e: DetectEnv): LocalServer[] {

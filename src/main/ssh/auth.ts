@@ -36,7 +36,8 @@ export class AuthCancelled extends Error {
 export interface AuthContext {
   prompter: Prompter
   homeDir: string
-  agentPath: string | null
+  /** ssh-agent sockets/pipes or "pageant", tried in order */
+  agentPaths: string[]
 }
 
 export const DEFAULT_KEY_FILES = ['id_ed25519', 'id_ecdsa', 'id_rsa']
@@ -167,6 +168,11 @@ function keyboardInteractiveAttempt(server: SshServer, ctx: AuthContext, onCance
   }
 }
 
+/** task.md 4.1: password (stored, else asked) before keyboard-interactive. */
+function passwordThenKeyboardInteractive(server: SshServer, ctx: AuthContext, onCancel: () => void): Attempt[] {
+  return [...storedPasswordAttempt(server), ...promptedPasswordAttempts(server, ctx), keyboardInteractiveAttempt(server, ctx, onCancel)]
+}
+
 export interface AuthHandlerState {
   cancelled: boolean
   /** The attempt that was in flight when authentication succeeded. */
@@ -178,9 +184,10 @@ export function buildAttempts(server: SshServer, ctx: AuthContext, state: AuthHa
   const onCancel = () => {
     state.cancelled = true
   }
-  const agent: Attempt[] = ctx.agentPath
-    ? [{ method: 'agent', run: async () => ({ type: 'agent', username: server.username, agent: ctx.agentPath! }) }]
-    : []
+  const agent: Attempt[] = ctx.agentPaths.map((path) => ({
+    method: 'agent' as const,
+    run: async () => ({ type: 'agent' as const, username: server.username, agent: path })
+  }))
   const defaultKeyFiles = DEFAULT_KEY_FILES.map((f) => join(ctx.homeDir, '.ssh', f))
   const explicitKey = auth.keyPath ? [expandHome(auth.keyPath, ctx.homeDir)] : null
 
@@ -190,19 +197,13 @@ export function buildAttempts(server: SshServer, ctx: AuthContext, state: AuthHa
     case 'key':
       return keyAttempts(server, ctx, explicitKey ?? defaultKeyFiles, true)
     case 'password':
-      return [
-        ...storedPasswordAttempt(server),
-        keyboardInteractiveAttempt(server, ctx, onCancel),
-        ...promptedPasswordAttempts(server, ctx)
-      ]
+      return passwordThenKeyboardInteractive(server, ctx, onCancel)
     case 'auto':
     default:
       return [
         ...agent,
-        ...keyAttempts(server, ctx, explicitKey ?? defaultKeyFiles, !!explicitKey),
-        ...storedPasswordAttempt(server),
-        keyboardInteractiveAttempt(server, ctx, onCancel),
-        ...promptedPasswordAttempts(server, ctx)
+        ...keyAttempts(server, ctx, explicitKey ?? defaultKeyFiles, true),
+        ...passwordThenKeyboardInteractive(server, ctx, onCancel)
       ]
   }
 }

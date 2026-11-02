@@ -26,8 +26,8 @@ export interface ConnectDeps {
   /** seconds */
   readyTimeout: number
   homeDir: string
-  /** ssh-agent socket/pipe or "pageant"; null = no agent */
-  agentPath: string | null
+  /** ssh-agent sockets/pipes or "pageant", tried in order */
+  agentPaths: string[]
   onSecretSaved?: (serverId: string, field: 'password' | 'keyPassphrase', value: string) => void
 }
 
@@ -78,11 +78,36 @@ function connectHop(server: SshServer, deps: ConnectDeps, sock?: Duplex): Promis
     const fail = (e: Error) => {
       if (settled) return
       settled = true
+      if (timer) clearTimeout(timer)
       client.end()
       reject(e)
     }
 
-    const attempts = buildAttempts(server, { prompter: deps.prompter, homeDir: deps.homeDir, agentPath: deps.agentPath }, state)
+    // Handshake timeout that pauses while a dialog waits for the user (ssh2's own readyTimeout
+    // would keep running during host-key / password / OTP prompts).
+    let timer: NodeJS.Timeout | null = null
+    let openPrompts = 0
+    const armTimer = () => {
+      if (timer) clearTimeout(timer)
+      timer = openPrompts === 0 && !settled ? setTimeout(() => fail(new Error(`${hopLabel(server)}: timed out while connecting`)), deps.readyTimeout * 1000) : null
+    }
+    const track = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) => async (...a: A): Promise<R> => {
+      openPrompts++
+      if (timer) clearTimeout(timer)
+      try {
+        return await fn(...a)
+      } finally {
+        openPrompts--
+        armTimer()
+      }
+    }
+    const prompter: Prompter = {
+      hostKey: track((r) => deps.prompter.hostKey(r)),
+      secret: track((r) => deps.prompter.secret(r)),
+      keyboardInteractive: track((r) => deps.prompter.keyboardInteractive(r))
+    }
+
+    const attempts = buildAttempts(server, { prompter, homeDir: deps.homeDir, agentPaths: deps.agentPaths }, state)
     const authHandler = makeAuthHandler(server.username, attempts, state, (e) => {
       failure = e
     })
@@ -90,7 +115,7 @@ function connectHop(server: SshServer, deps: ConnectDeps, sock?: Duplex): Promis
     const hostVerifier = (key: Buffer, verify: (ok: boolean) => void) => {
       const status = deps.knownHosts.check(server.host, server.port, key)
       if (status === 'match') return verify(true)
-      deps.prompter
+      prompter
         .hostKey({
           kind: 'hostKey',
           status,
@@ -132,11 +157,12 @@ function connectHop(server: SshServer, deps: ConnectDeps, sock?: Duplex): Promis
       tryKeyboard: true,
       keepaliveInterval: deps.keepaliveInterval * 1000,
       keepaliveCountMax: 3,
-      readyTimeout: deps.readyTimeout * 1000
+      readyTimeout: 0 // see armTimer above
     }
 
     client.once('ready', () => {
       settled = true
+      if (timer) clearTimeout(timer)
       const save = state.current?.save
       if (save && deps.onSecretSaved) deps.onSecretSaved(server.id, save.field, save.value)
       resolve(client)
@@ -154,6 +180,7 @@ function connectHop(server: SshServer, deps: ConnectDeps, sock?: Duplex): Promis
     })
     try {
       client.connect(cfg)
+      armTimer()
     } catch (e) {
       fail(e as Error)
     }

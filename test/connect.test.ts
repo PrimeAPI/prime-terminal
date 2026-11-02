@@ -55,7 +55,7 @@ function makeDeps(over: Partial<Prompter> & { home?: string } = {}): { deps: Con
       keepaliveInterval: 30,
       readyTimeout: 10,
       homeDir: home,
-      agentPath: null,
+      agentPaths: [],
       onSecretSaved: (id, field, value) => saved.push({ id, field, value })
     }
   }
@@ -154,6 +154,42 @@ describe('connectChain', () => {
     const conn = await connectChain([hop('t', s.port, { method: 'auto' })], deps)
     conn.close()
     expect(calls.kbd).toBe(1)
+  })
+
+  it('does not time out while the user is answering a prompt', async () => {
+    const s = await server({ password: 'pw' })
+    const { deps } = makeDeps({ hostKey: async () => new Promise((r) => setTimeout(() => r(true), 1500)) })
+    deps.readyTimeout = 1
+    const conn = await connectChain([hop('t', s.port, { method: 'password', password: 'pw' })], deps)
+    conn.close()
+  })
+
+  it('still times out when the server never answers', async () => {
+    const net = await import('node:net')
+    const silent = net.createServer(() => {})
+    await new Promise<void>((r) => silent.listen(0, '127.0.0.1', r))
+    const port = (silent.address() as import('node:net').AddressInfo).port
+    const { deps } = makeDeps()
+    deps.readyTimeout = 1
+    await expect(connectChain([hop('t', port, { method: 'password', password: 'x' })], deps)).rejects.toThrow(/timed out/i)
+    silent.close()
+  })
+
+  it('asks for a password before keyboard-interactive when the server offers both', async () => {
+    const s = await server({ password: 'pw', kbd: { prompt: 'Code: ', answer: '1' } })
+    const { deps, calls } = makeDeps({ secret: async () => ({ value: 'pw', save: false }) })
+    const conn = await connectChain([hop('t', s.port, { method: 'auto' })], deps)
+    conn.close()
+    expect(calls.secret).toEqual(['password'])
+    expect(calls.kbd).toBe(0)
+  })
+
+  it('tries every configured agent (e.g. OpenSSH pipe and Pageant on Windows) without failing', async () => {
+    const s = await server({ password: 'pw' })
+    const { deps } = makeDeps()
+    deps.agentPaths = ['/nonexistent/agent.sock', '/nonexistent/other.sock']
+    const conn = await connectChain([hop('t', s.port, { method: 'auto', password: 'pw' })], deps)
+    conn.close()
   })
 
   it('reports cancelled authentication clearly', async () => {

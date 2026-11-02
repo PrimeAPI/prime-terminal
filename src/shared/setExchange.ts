@@ -36,6 +36,11 @@ export function toExchangeEntry(e: ForwardEntry): ExchangeEntry {
   }
 }
 
+/** Pretty JSON of a set in the exchange format (JSON view, clipboard). */
+export function exchangeSetJson(set: ForwardSet, servers: ServersDoc): string {
+  return JSON.stringify(toExchangeSet(set, servers), null, 2)
+}
+
 export function toExchangeSet(set: ForwardSet, servers: ServersDoc): ExchangeSet {
   return {
     name: set.name,

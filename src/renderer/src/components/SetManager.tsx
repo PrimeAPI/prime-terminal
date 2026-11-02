@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ConfigSnapshot, ForwardEntry, ForwardSet, ForwardSetsDoc, ForwardType, SshServer, TunnelSetStatus } from '../../../shared/types'
+import { isTunnelRunning, type ConfigSnapshot, type ForwardEntry, type ForwardSet, type ForwardSetsDoc, type ForwardType, type SshServer, type TunnelSetStatus } from '../../../shared/types'
 import { validateForwardSet, type Issue } from '../../../shared/forwardValidation'
 import { exchangeSetSchema } from '../../../shared/schemas'
 import {
+  exchangeSetJson,
   fromExchangeEntry,
   fromExchangeSet,
   parseClipboard,
@@ -25,7 +26,6 @@ interface Props {
 
 const blankEntry = (): ForwardEntry => ({ id: newId(), type: 'local', enabled: true, bindAddress: '127.0.0.1', bindPort: 0, targetHost: 'localhost', targetPort: 0 })
 
-const isRunning = (s?: TunnelSetStatus) => !!s && s.state !== 'off' && s.state !== 'error'
 
 export function SetManager({ config, status, onClose, onEditAllJson, notify }: Props) {
   const [draft, setDraft] = useState<ForwardSetsDoc>(() => structuredClone(config.sets))
@@ -54,7 +54,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
   const servers = config.servers
   const sshServers = servers.servers.filter((s): s is SshServer => s.type === 'ssh')
   const set = draft.sets.find((s) => s.id === selId) ?? null
-  const activeOthers = draft.sets.filter((s) => s.id !== selId && isRunning(status[s.id]))
+  const activeOthers = draft.sets.filter((s) => s.id !== selId && isTunnelRunning(status[s.id]))
 
   const validation = useMemo(
     () => (set ? validateForwardSet(set, { servers, activeSets: activeOthers }) : { errors: [], warnings: [] }),
@@ -79,7 +79,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
   // keep JSON view in sync with the selected set
   useEffect(() => {
     if (view === 'json' && set) {
-      setJsonText(JSON.stringify(toExchangeSet(set, servers), null, 2))
+      setJsonText(exchangeSetJson(set, servers))
       setJsonError(null)
     }
   }, [view, selId])
@@ -91,7 +91,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
       return
     }
     if (v === 'json' && set) {
-      setJsonText(JSON.stringify(toExchangeSet(set, servers), null, 2))
+      setJsonText(exchangeSetJson(set, servers))
       setJsonError(null)
     }
     setView(v)
@@ -137,7 +137,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
   const deleteSet = () => {
     if (!set) return
     if (!confirm(`Delete set "${set.name}"?`)) return
-    if (isRunning(status[set.id])) void pt.tunnels.deactivate(set.id)
+    if (isTunnelRunning(status[set.id])) void pt.tunnels.deactivate(set.id)
     const i = draft.sets.findIndex((s) => s.id === set.id)
     const rest = draft.sets.filter((s) => s.id !== set.id)
     setDraft({ sets: rest })
@@ -145,7 +145,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
   }
   const copySet = () => {
     if (!set) return
-    pt.ui.clipboardWrite(JSON.stringify(toExchangeSet(set, servers), null, 2))
+    pt.ui.clipboardWrite(exchangeSetJson(set, servers))
     notify(`Copied set "${set.name}" as JSON`)
   }
   const addImportedSets = (text: string, source: string) => {
@@ -303,7 +303,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
     if (!r.ok) return setSaveError(r.error)
     setSaveError(null)
     const changedRunning = draft.sets
-      .filter((s) => isRunning(status[s.id]))
+      .filter((s) => isTunnelRunning(status[s.id]))
       .filter((s) => JSON.stringify(s) !== JSON.stringify(saved.sets.find((o) => o.id === s.id)))
       .map((s) => s.id)
     setRestartHint((h) => [...new Set([...h, ...changedRunning])])
@@ -315,7 +315,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
   }
 
   const proxyMode = !set ? 'default' : set.proxyJump === undefined ? 'default' : set.proxyJump.length === 0 ? 'direct' : 'custom'
-  const showRestart = set && restartHint.includes(set.id) && isRunning(status[set.id])
+  const showRestart = set && restartHint.includes(set.id) && isTunnelRunning(status[set.id])
 
   return (
     <Modal
@@ -349,7 +349,7 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
               setJsonError(null)
               if (view === 'json') {
                 const s = saved.sets.find((x) => x.id === selId)
-                if (s) setJsonText(JSON.stringify(toExchangeSet(s, servers), null, 2))
+                if (s) setJsonText(exchangeSetJson(s, servers))
               }
             }}
           >

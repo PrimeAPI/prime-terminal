@@ -39,7 +39,7 @@ describe('SshShellBackend', () => {
           keepaliveInterval: 30,
           readyTimeout: 5,
           homeDir: tmpdir(),
-          agentPath: null
+          agentPaths: []
         })
     )
     const got = collect(b, 'grüße')

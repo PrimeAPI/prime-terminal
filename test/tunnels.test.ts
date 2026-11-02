@@ -22,7 +22,7 @@ function deps(): ConnectDeps {
     keepaliveInterval: 30,
     readyTimeout: 5,
     homeDir: mkdtempSync(join(tmpdir(), 'home-')),
-    agentPath: null
+    agentPaths: []
   }
 }
 
@@ -86,18 +86,20 @@ async function setup(extra: { password?: string } = {}) {
   }
   const sets = new Map<string, ForwardSet>()
   let connects = 0
+  const interactive: boolean[] = []
   const d = deps()
   const mgr = new TunnelManager({
     getSet: (id) => sets.get(id),
     resolveHops: (set) => resolveSetHops(set, servers),
-    connect: (hops: SshServer[]) => {
+    connect: (hops: SshServer[], opts: { interactive: boolean }) => {
       connects++
+      interactive.push(opts.interactive)
       return connectChain(hops, d)
     },
     backoff: () => ({ min: 0.05, max: 0.2 })
   })
   cleanups.push(() => mgr.stopAll())
-  return { jump, target, echo, sets, mgr, connects: () => connects }
+  return { jump, target, echo, sets, mgr, connects: () => connects, interactive }
 }
 
 const st = (mgr: TunnelManager, id: string): TunnelSetStatus => mgr.status(id)
@@ -164,7 +166,7 @@ describe('TunnelManager', () => {
   })
 
   it('reconnects with backoff after an established connection drops', async () => {
-    const { echo, target, sets, mgr } = await setup()
+    const { echo, target, sets, mgr, interactive } = await setup()
     const lp = await freePort()
     sets.set('s', {
       id: 's',
@@ -180,6 +182,9 @@ describe('TunnelManager', () => {
     await waitFor(() => states.includes('reconnecting'))
     await waitFor(() => st(mgr, 's').state === 'active' && states.lastIndexOf('active') > states.indexOf('reconnecting'))
     expect(await echoRoundTrip(lp, 'again')).toBe('again')
+    // only the user-initiated first attempt may show dialogs
+    expect(interactive[0]).toBe(true)
+    expect(interactive.slice(1).every((x) => x === false)).toBe(true)
   })
 
   it('stops listeners on deactivate and cancels pending reconnects', async () => {

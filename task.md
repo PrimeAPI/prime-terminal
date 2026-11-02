@@ -406,3 +406,24 @@ Alle übrigen Tasten, z. B. `Ctrl+D`, `Ctrl+Z`, `Ctrl+R`, `Ctrl+L`, `Alt+…` un
 - Ein Set lässt sich als JSON kopieren und in einer anderen Installation einfügen. Der Server wird dabei per Name aufgelöst.
 - Eine Änderung in `settings.json` (z. B. `fontSize`) wirkt sofort in allen offenen Tabs.
 - Ein geänderter Host-Key blockiert die Verbindung.
+
+---
+
+## 14. Umsetzungsstand (v1)
+
+Alle Punkte aus Abschnitt 1–13 sind umgesetzt, mit Ausnahme der ausdrücklich verschobenen GitHub Actions (3.2).
+Prüfung: `npm test` (Unit- und Integrationstests gegen SSH-Server im Testprozess), `npm run typecheck`, `npm run lint`,
+Smoke-Tests der gebauten App und der AppImage (siehe README, „Smoke testing“).
+
+Präzisierungen und Abweichungen gegenüber dem Text oben:
+- **JSON-Ansicht eines Sets** nutzt das portable Austauschformat: Server und Jump-Hosts werden per **Name** referenziert
+  (Auflösung beim Speichern bzw. Einfügen erst per id, dann per Name). In `forward-sets.json` stehen weiterhin ids.
+- **Auth-Reihenfolge (auto):** Agent, Keys (verschlüsselte Keys fragen nach der Passphrase), gespeichertes Passwort,
+  Passwort-Abfrage, keyboard-interactive. Mehrere Agents werden nacheinander probiert (Windows: OpenSSH-Pipe, dann Pageant).
+- **Handshake-Timeout** (`ssh.connectTimeout`) pausiert, solange ein Dialog (Host-Key, Passwort, 2FA) offen ist.
+- **Tunnel-Reconnects** zeigen nie Dialoge. Braucht ein Reconnect eine Eingabe, schlägt er fehl und wird mit Backoff erneut versucht.
+- **Tear-off:** Ein Tab, der außerhalb jeder Tab-Leiste losgelassen wird (auch im eigenen, z. B. maximierten Fenster), öffnet ein
+  neues Fenster an der Mausposition. Beim Loslassen auf der Tab-Leiste eines anderen Fensters wandert der Tab dorthin.
+- **Automatisch erkannte Shells** bekommen stabile, aus dem Shell-Typ abgeleitete UUIDs.
+- **Zusätzliche Dateien im Config-Ordner:** `window-state.json` (letzte Fensterposition) und `chromium/` (Electron-Cache).
+- **Windows-`.exe`:** Der Build ist nur auf Windows möglich, mit Visual Studio Build Tools für die nativen Module. Ein Cross-Build von Linux aus bricht an `cpu-features` ab.

@@ -17,6 +17,7 @@ describe('keybindings', () => {
     expect(parseAccelerator('ctrl+shift+c')).toEqual({ ctrl: true, shift: true, alt: false, meta: false, key: 'C' })
     expect(parseAccelerator('Ctrl+Plus')?.key).toBe('PLUS')
     expect(parseAccelerator('nonsense+')).toBeNull()
+    expect(parseAccelerator('Ctrl++')).toMatchObject({ ctrl: true, key: 'PLUS' })
   })
 
   it('maps Ctrl+Shift+C to copy but leaves plain Ctrl+C to the terminal', () => {
@@ -33,6 +34,8 @@ describe('keybindings', () => {
     expect(matchAction(ev({ key: '+', code: 'BracketRight', ctrlKey: true }), DEFAULT_KEYBINDINGS)).toBe('zoomIn')
     expect(matchAction(ev({ key: '+', code: 'NumpadAdd', ctrlKey: true }), DEFAULT_KEYBINDINGS)).toBe('zoomIn')
     expect(matchAction(ev({ key: '-', code: 'Minus', ctrlKey: true }), DEFAULT_KEYBINDINGS)).toBe('zoomOut')
+    // US layout: "+" needs Shift
+    expect(matchAction(ev({ key: '+', code: 'Equal', ctrlKey: true, shiftKey: true }), DEFAULT_KEYBINDINGS)).toBe('zoomIn')
   })
 
   it('uses the layout key for letters (QWERTZ: physical KeyY produces z)', () => {

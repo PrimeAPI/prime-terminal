@@ -33,8 +33,9 @@ const KEY_ALIASES: Record<string, string> = {
 
 export function parseAccelerator(text: string): Accelerator | null {
   if (!text || !text.trim()) return null
-  const parts = text.split('+').map((p) => p.trim())
-  // "Ctrl++" style: trailing empty parts mean a literal plus
+  // "Ctrl++": a trailing "++" means the plus key itself
+  const normalized = text.trim().replace(/\+\+$/, '+Plus')
+  const parts = normalized.split('+').map((p) => p.trim())
   const acc: Accelerator = { ctrl: false, shift: false, alt: false, meta: false, key: '' }
   for (let i = 0; i < parts.length; i++) {
     const raw = parts[i]
@@ -67,10 +68,12 @@ export function eventKey(e: KeyEventLike): string {
 }
 
 function matches(acc: Accelerator, e: KeyEventLike, key: string): boolean {
+  // on layouts where "+" needs Shift (US: Shift+=), Ctrl+Plus must still match
+  const shiftOk = acc.shift === e.shiftKey || (acc.key === 'PLUS' && !acc.shift && e.key === '+')
   return (
     acc.key === key &&
     acc.ctrl === e.ctrlKey &&
-    acc.shift === e.shiftKey &&
+    shiftOk &&
     acc.alt === e.altKey &&
     acc.meta === e.metaKey
   )

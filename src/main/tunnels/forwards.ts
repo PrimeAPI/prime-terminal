@@ -7,6 +7,8 @@ import type { ForwardEntry } from '../../shared/types'
 import type { SshConnection } from '../ssh/connect'
 import { createSocks5Server } from './socks5'
 
+const bindAddressOf = (e: ForwardEntry) => e.bindAddress || '127.0.0.1'
+
 export interface RunningForward {
   close(): Promise<void>
 }
@@ -55,7 +57,7 @@ function listen(server: net.Server, addr: string, port: number): Promise<Running
 }
 
 function startLocal(conn: SshConnection, e: ForwardEntry): Promise<RunningForward> {
-  const addr = e.bindAddress || '127.0.0.1'
+  const addr = bindAddressOf(e)
   const server = net.createServer((sock) => {
     sock.pause()
     forwardOut(conn, sock, e.targetHost!, e.targetPort!)
@@ -69,7 +71,7 @@ function startLocal(conn: SshConnection, e: ForwardEntry): Promise<RunningForwar
 }
 
 function startDynamic(conn: SshConnection, e: ForwardEntry): Promise<RunningForward> {
-  const addr = e.bindAddress || '127.0.0.1'
+  const addr = bindAddressOf(e)
   const server = createSocks5Server((host, port, src) => forwardOut(conn, src, host, port))
   return listen(server, addr, e.bindPort)
 }
@@ -91,7 +93,7 @@ function startRemote(conn: SshConnection, e: ForwardEntry): Promise<RunningForwa
       sock.once('error', () => reject())
     })
   }
-  const addr = e.bindAddress || '127.0.0.1'
+  const addr = bindAddressOf(e)
   const map = routes
   return new Promise((resolve, reject) => {
     conn.client.forwardIn(addr, e.bindPort, (err, port) => {

@@ -14,6 +14,7 @@ export function PromptHost() {
   useEffect(() => {
     const off1 = pt.prompts.onPrompt((id, req) => setQueue((q) => [...q, { id, req }]))
     const off2 = pt.prompts.onCancel((id) => setQueue((q) => q.filter((i) => i.id !== id)))
+    pt.prompts.ready()
     return () => {
       off1()
       off2()

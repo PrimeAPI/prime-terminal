@@ -156,6 +156,11 @@ export interface TunnelEntryStatus {
   error?: string
 }
 
+/** A set counts as running while it is connecting, active or reconnecting. */
+export function isTunnelRunning(s: { state: TunnelSetState } | undefined): boolean {
+  return !!s && (s.state === 'connecting' || s.state === 'active' || s.state === 'reconnecting')
+}
+
 export interface TunnelSetStatus {
   setId: string
   state: TunnelSetState

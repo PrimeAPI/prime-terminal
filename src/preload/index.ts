@@ -64,7 +64,8 @@ const api: PtApi = {
   prompts: {
     onPrompt: (cb) => on('prompts:request', cb),
     onCancel: (cb) => on('prompts:cancel', cb),
-    respond: (id, resp) => send('prompts:respond', id, resp)
+    respond: (id, resp) => send('prompts:respond', id, resp),
+    ready: () => send('prompts:ready')
   },
   ui: {
     contextMenu: (items) => invoke('ui:contextMenu', items),

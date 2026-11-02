@@ -21,7 +21,7 @@ import { PromptService } from './prompts'
 import { LocalPtyBackend, SshShellBackend } from './sessions/backends'
 import { SessionManager } from './sessions/sessionManager'
 import { detectShellsOnThisMachine, mergeDetectedShells } from './shells/detect'
-import { detectAgentPath } from './ssh/agent'
+import { detectAgentPaths } from './ssh/agent'
 import { connectChain, type ConnectDeps, type Prompter } from './ssh/connect'
 import { KnownHosts } from './ssh/knownHosts'
 import { importSshConfig } from './ssh/sshConfigImport'
@@ -34,6 +34,11 @@ interface WindowState {
 }
 
 type Result = { ok: true } | { ok: false; error: string }
+
+/** Where a torn-off window is placed relative to the cursor (cursor lands on its tab bar). */
+const TEAR_OFF_OFFSET = { x: 120, y: 16 }
+/** Height of the area at the top of a window's content that counts as "tab bar" for drops. */
+const TAB_BAR_ZONE = 64
 const errorResult = (e: unknown): Result => ({ ok: false, error: e instanceof Error ? e.message : String(e) })
 
 export class PrimeApp {
@@ -52,7 +57,7 @@ export class PrimeApp {
   private quitting = false
   private started = new Set<string>()
   private knownHosts = new KnownHosts(join(homedir(), '.ssh', 'known_hosts'))
-  private agentPath = detectAgentPath()
+  private agentPaths = detectAgentPaths()
 
   constructor(
     private readonly configDir: string,
@@ -63,7 +68,8 @@ export class PrimeApp {
     this.tunnels = new TunnelManager({
       getSet: (id) => this.stores.sets.value.sets.find((s) => s.id === id),
       resolveHops: (set) => resolveSetHops(set, this.stores.servers.value),
-      connect: (hops) => connectChain(hops, this.connectDeps(this.prompts.prompter(() => this.promptTarget()))),
+      connect: (hops, { interactive }) =>
+        connectChain(hops, this.connectDeps(interactive ? this.prompts.prompter(() => this.promptTarget()) : PromptService.silent)),
       backoff: () => {
         const t = this.stores.settings.value.tunnels
         return { min: t.reconnectBackoffMin, max: Math.max(t.reconnectBackoffMin, t.reconnectBackoffMax) }
@@ -145,7 +151,7 @@ export class PrimeApp {
       keepaliveInterval: settings.ssh.keepaliveInterval,
       readyTimeout: settings.ssh.connectTimeout,
       homeDir: homedir(),
-      agentPath: this.agentPath,
+      agentPaths: this.agentPaths,
       onSecretSaved: (id, field, value) => this.saveSecret(id, field, value)
     }
   }
@@ -178,7 +184,7 @@ export class PrimeApp {
     const saved = this.loadWindowState()
     const base = opts.size ?? saved.bounds ?? { width: 1100, height: 700 }
     let pos: { x?: number; y?: number } = {}
-    if (opts.at) pos = { x: Math.round(opts.at.x - 120), y: Math.round(opts.at.y - 16) }
+    if (opts.at) pos = { x: Math.round(opts.at.x - TEAR_OFF_OFFSET.x), y: Math.round(opts.at.y - TEAR_OFF_OFFSET.y) }
     else if (saved.bounds && this.windows.size === 0) {
       const visible = screen.getAllDisplays().some((d) => {
         const a = d.workArea
@@ -246,7 +252,32 @@ export class PrimeApp {
   }
 
   private winOf(sender: WebContents): number {
+    // window ids in the tab model are the ids of their WebContents
     return sender.id
+  }
+
+  /** Move a tab to another window; the target renderer re-attaches and gets the scrollback. */
+  private moveTabTo(sessionId: string, toWin: number, index?: number) {
+    const from = this.tabs.windowOf(sessionId)
+    if (from !== null) this.attached.get(from)?.delete(sessionId)
+    this.tabs.moveTab(sessionId, toWin, index)
+    this.windows.get(toWin)?.focus()
+  }
+
+  private async fileDialog<T extends 'open' | 'save'>(
+    sender: WebContents,
+    kind: T,
+    opts: T extends 'open' ? Electron.OpenDialogOptions : Electron.SaveDialogOptions
+  ): Promise<string | null> {
+    const win = BrowserWindow.fromWebContents(sender)
+    if (kind === 'open') {
+      const o = opts as Electron.OpenDialogOptions
+      const r = win ? await dialog.showOpenDialog(win, o) : await dialog.showOpenDialog(o)
+      return r.canceled ? null : (r.filePaths[0] ?? null)
+    }
+    const o = opts as Electron.SaveDialogOptions
+    const r = win ? await dialog.showSaveDialog(win, o) : await dialog.showSaveDialog(o)
+    return r.canceled ? null : (r.filePath ?? null)
   }
 
   private sendTo(winId: number, channel: string, ...args: unknown[]) {
@@ -367,35 +398,37 @@ export class PrimeApp {
     const src = this.windows.get(from)
     const size = src ? { width: src.getBounds().width, height: src.getBounds().height } : undefined
     const win = this.createWindow({ at: at ?? (src ? { x: src.getBounds().x + 160, y: src.getBounds().y + 60 } : undefined), size })
-    this.attached.get(from)?.delete(sessionId)
-    this.tabs.moveTab(sessionId, win.webContents.id)
+    this.moveTabTo(sessionId, win.webContents.id)
   }
 
-  private windowAtPoint(p: { x: number; y: number }): number | null {
-    for (const [id, w] of this.windows) {
-      const b = w.getBounds()
-      if (p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height && !w.isMinimized()) return id
+  /** Window whose tab-bar zone contains the point (focused window first for overlaps). */
+  private tabBarAtPoint(p: { x: number; y: number }): number | null {
+    const focused = BrowserWindow.getFocusedWindow()
+    const ordered = [...this.windows].sort(([, a]) => (a === focused ? -1 : 0))
+    for (const [id, w] of ordered) {
+      if (w.isMinimized() || !w.isVisible()) continue
+      const b = w.getContentBounds()
+      if (p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + TAB_BAR_ZONE) return id
     }
     return null
   }
 
+  /**
+   * A tab drag ended without a drop on a tab bar (drops are handled in 'tabs:drop').
+   * Over some window's tab bar → move there (or keep); anywhere else → tear off into a new window.
+   */
   private finishDrag(sessionId: string) {
     const d = this.dragging
     if (!d || d.sessionId !== sessionId) return
     this.dragging = null
     if (d.dropped) return
     const p = screen.getCursorScreenPoint()
-    const over = this.windowAtPoint(p)
+    const over = this.tabBarAtPoint(p)
     if (over === d.fromWin) return
-    if (over !== null) {
-      this.attached.get(d.fromWin)?.delete(sessionId)
-      this.tabs.moveTab(sessionId, over)
-      this.windows.get(over)?.focus()
-      return
-    }
-    // dropped outside of any window → tear off
+    if (over !== null) return this.moveTabTo(sessionId, over)
     if (this.tabs.state(d.fromWin).tabs.length <= 1) {
-      this.windows.get(d.fromWin)?.setPosition(Math.round(p.x - 120), Math.round(p.y - 16))
+      // single tab: just move its window
+      this.windows.get(d.fromWin)?.setPosition(Math.round(p.x - TEAR_OFF_OFFSET.x), Math.round(p.y - TEAR_OFF_OFFSET.y))
       return
     }
     this.moveToNewWindow(sessionId, p)
@@ -408,22 +441,16 @@ export class PrimeApp {
     const on = ipcMain.on.bind(ipcMain)
 
     h('config:get', () => this.snapshot())
-    h('config:saveServers', (_e, doc: ServersDoc) => {
+    const saveDoc = (store: { save(v: never): void }, doc: unknown): Result => {
       try {
-        this.stores.servers.save(doc)
+        store.save(doc as never)
         return { ok: true }
       } catch (e) {
         return errorResult(e)
       }
-    })
-    h('config:saveSets', (_e, doc: ForwardSetsDoc) => {
-      try {
-        this.stores.sets.save(doc)
-        return { ok: true }
-      } catch (e) {
-        return errorResult(e)
-      }
-    })
+    }
+    h('config:saveServers', (_e, doc: ServersDoc) => saveDoc(this.stores.servers, doc))
+    h('config:saveSets', (_e, doc: ForwardSetsDoc) => saveDoc(this.stores.sets, doc))
     h('config:readText', (_e, kind: ConfigFileKind) => this.stores.byKind[kind].readText())
     h('config:saveText', (_e, kind: ConfigFileKind, text: string) => this.stores.byKind[kind].saveText(text))
     h('config:importSshConfig', () => {
@@ -438,28 +465,25 @@ export class PrimeApp {
       }
     })
     h('config:pickKeyFile', async (e) => {
-      const win = BrowserWindow.fromWebContents(e.sender)
-      const opts = { title: 'Choose private key', defaultPath: join(homedir(), '.ssh'), properties: ['openFile', 'showHiddenFiles'] as ('openFile' | 'showHiddenFiles')[] }
-      const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
-      if (r.canceled || !r.filePaths[0]) return null
-      const p = r.filePaths[0]
+      const p = await this.fileDialog(e.sender, 'open', {
+        title: 'Choose private key',
+        defaultPath: join(homedir(), '.ssh'),
+        properties: ['openFile', 'showHiddenFiles']
+      })
+      if (!p) return null
       const home = homedir()
       return p.startsWith(home) ? '~' + p.slice(home.length).replace(/\\/g, '/') : p
     })
+    const jsonFilter = [{ name: 'JSON', extensions: ['json'] }]
     h('config:exportText', async (e, name: string, text: string) => {
-      const win = BrowserWindow.fromWebContents(e.sender)
-      const opts = { defaultPath: name, filters: [{ name: 'JSON', extensions: ['json'] }] }
-      const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
-      if (r.canceled || !r.filePath) return false
-      writeFileSync(r.filePath, text)
+      const p = await this.fileDialog(e.sender, 'save', { defaultPath: name, filters: jsonFilter })
+      if (!p) return false
+      writeFileSync(p, text)
       return true
     })
     h('config:importText', async (e) => {
-      const win = BrowserWindow.fromWebContents(e.sender)
-      const opts = { filters: [{ name: 'JSON', extensions: ['json'] }], properties: ['openFile'] as 'openFile'[] }
-      const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
-      if (r.canceled || !r.filePaths[0]) return null
-      return readFileSync(r.filePaths[0], 'utf8')
+      const p = await this.fileDialog(e.sender, 'open', { filters: jsonFilter, properties: ['openFile'] })
+      return p ? readFileSync(p, 'utf8') : null
     })
 
     h('sessions:open', (e, target: OpenTarget, opts?: { newWindow?: boolean; afterSessionId?: string }) => {
@@ -517,11 +541,7 @@ export class PrimeApp {
       d.dropped = true
       const to = this.winOf(e.sender)
       if (to === d.fromWin) this.tabs.reorder(d.sessionId, index)
-      else {
-        this.attached.get(d.fromWin)?.delete(d.sessionId)
-        this.tabs.moveTab(d.sessionId, to, index)
-        this.windows.get(to)?.focus()
-      }
+      else this.moveTabTo(d.sessionId, to, index)
     })
 
     on('windows:new', () => this.createWindow())
@@ -535,6 +555,7 @@ export class PrimeApp {
     })
 
     on('prompts:respond', (_e, id: string, resp) => this.prompts.respond(id, resp))
+    on('prompts:ready', (e) => this.prompts.markReady(e.sender))
 
     h('ui:contextMenu', (e, items: MenuItemSpec[]) => {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined

@@ -11,7 +11,8 @@ import { startForward, type RunningForward } from './forwards'
 export interface TunnelManagerDeps {
   getSet(id: string): ForwardSet | undefined
   resolveHops(set: ForwardSet): SshServer[]
-  connect(hops: SshServer[]): Promise<SshConnection>
+  /** interactive=false: never show dialogs (automatic reconnects) */
+  connect(hops: SshServer[], opts: { interactive: boolean }): Promise<SshConnection>
   /** seconds */
   backoff(): { min: number; max: number }
 }
@@ -57,12 +58,16 @@ class Runner {
     }
     this.update({ state: 'connecting' })
     try {
-      const conn = await this.deps.connect(hops)
-      if (this.stopped) return conn.close()
-      await this.attach(conn)
+      await this.connectAndAttach(hops, true)
     } catch (e) {
       if (!this.stopped) this.update({ state: 'error', error: (e as Error).message })
     }
+  }
+
+  private async connectAndAttach(hops: SshServer[], interactive: boolean) {
+    const conn = await this.deps.connect(hops, { interactive })
+    if (this.stopped) return conn.close()
+    await this.attach(conn)
   }
 
   private async attach(conn: SshConnection) {
@@ -111,7 +116,6 @@ class Runner {
       error: reason,
       entries: this.status.entries.map((e) => ({ id: e.id, state: 'off' as const }))
     })
-    this.status.nextRetryAt = Date.now() + delay
     this.timer = setTimeout(() => void this.reconnect(), delay)
   }
 
@@ -119,9 +123,7 @@ class Runner {
     this.timer = null
     if (this.stopped) return
     try {
-      const conn = await this.deps.connect(this.deps.resolveHops(this.set))
-      if (this.stopped) return conn.close()
-      await this.attach(conn)
+      await this.connectAndAttach(this.deps.resolveHops(this.set), false)
     } catch (e) {
       if (!this.stopped) this.scheduleReconnect((e as Error).message)
     }
@@ -169,20 +171,19 @@ export class TunnelManager extends EventEmitter {
     const r = this.runners.get(setId)
     this.runners.delete(setId)
     if (r) await r.stop()
-    const set = this.deps.getSet(setId)
-    this.publish({ setId, state: 'off', entries: (set?.forwards ?? []).map((f) => ({ id: f.id, state: 'off' })) })
+    this.publish(this.offStatus(setId))
   }
 
-  isRunning(setId: string): boolean {
-    return this.runners.has(setId)
+  private offStatus(setId: string): TunnelSetStatus {
+    const set = this.deps.getSet(setId)
+    return { setId, state: 'off', entries: (set?.forwards ?? []).map((f) => ({ id: f.id, state: 'off' })) }
   }
 
   status(setId: string): TunnelSetStatus {
     if (this.runners.has(setId)) return this.runners.get(setId)!.status
-    const set = this.deps.getSet(setId)
     const last = this.last.get(setId)
     if (last && last.state === 'error') return last
-    return { setId, state: 'off', entries: (set?.forwards ?? []).map((f) => ({ id: f.id, state: 'off' })) }
+    return this.offStatus(setId)
   }
 
   /** Remove error state of a set that is not running. */

@@ -35,14 +35,13 @@ app.on('before-quit', (e) => {
 
 // Development smoke test: PT_SMOKE_SCREENSHOT=out.png [PT_SMOKE_JS=script.js] runs the optional
 // script in the first window, captures all windows and quits.
-if (process.env.PT_SMOKE_SCREENSHOT) {
+// Never active in packaged builds unless explicitly allowed (it executes a script from disk).
+if (process.env.PT_SMOKE_SCREENSHOT && (!app.isPackaged || process.env.PT_ALLOW_SMOKE === '1')) {
   const shot = process.env.PT_SMOKE_SCREENSHOT
   app.whenReady().then(async () => {
     const { BrowserWindow } = await import('electron')
     const { readFileSync, writeFileSync } = await import('node:fs')
-    console.log('SMOKE_START')
     await new Promise((r) => setTimeout(r, 2500))
-    console.log('SMOKE_WAITED', BrowserWindow.getAllWindows().length)
     const win = BrowserWindow.getAllWindows()[0]
     if (process.env.PT_SMOKE_JS) {
       try {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectShells, mergeDetectedShells, parseWslList } from '../src/main/shells/detect'
+import { detectShells, mergeDetectedShells, parseWslList, stableUuid } from '../src/main/shells/detect'
 import type { ServersDoc } from '../src/shared/types'
 
 describe('parseWslList', () => {
@@ -15,7 +15,7 @@ describe('parseWslList', () => {
 describe('detectShells', () => {
   it('uses $SHELL on Linux with /bin/bash fallback', () => {
     expect(detectShells({ platform: 'linux', env: { SHELL: '/usr/bin/zsh' }, exists: () => true, wslDistros: () => [] })).toEqual([
-      expect.objectContaining({ id: 'local-auto-default', name: 'zsh', shell: '/usr/bin/zsh', autoDetected: true })
+      expect.objectContaining({ name: 'zsh', shell: '/usr/bin/zsh', autoDetected: true })
     ])
     expect(detectShells({ platform: 'linux', env: {}, exists: () => true, wslDistros: () => [] })[0].shell).toBe('/bin/bash')
   })
@@ -37,6 +37,18 @@ describe('detectShells', () => {
     expect(shells.map((s) => s.name)).toEqual(['PowerShell 7', 'Windows PowerShell', 'Command Prompt', 'Git Bash', 'WSL: Ubuntu'])
     expect(shells.find((s) => s.name === 'WSL: Ubuntu')).toMatchObject({ shell: 'C:\\Windows\\System32\\wsl.exe', args: ['-d', 'Ubuntu'] })
     expect(shells.find((s) => s.name === 'Git Bash')!.args).toEqual(['--login', '-i'])
+  })
+})
+
+describe('stableUuid', () => {
+  it('derives the same UUID for the same key and different ones otherwise', () => {
+    expect(stableUuid('a')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(stableUuid('a')).toBe(stableUuid('a'))
+    expect(stableUuid('a')).not.toBe(stableUuid('b'))
+  })
+  it('gives auto-detected shells stable ids across detections', () => {
+    const env = { platform: 'linux' as const, env: { SHELL: '/bin/zsh' }, exists: () => true, wslDistros: () => [] }
+    expect(detectShells(env)[0].id).toBe(detectShells(env)[0].id)
   })
 })
 

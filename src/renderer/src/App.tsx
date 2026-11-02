@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ConfigFileKind, Folder, KeybindingAction, OpenTarget, Server } from '../../shared/types'
+import { isTunnelRunning, type ConfigFileKind, type Folder, type KeybindingAction, type OpenTarget, type Server } from '../../shared/types'
 import { matchAction } from '../../shared/keybindings'
 import { newId } from '../../shared/ids'
 import { pt } from './lib/api'
@@ -144,7 +144,7 @@ export function App() {
   document.documentElement.dataset.ui = ui
   const errors = Object.entries(config.errors) as [ConfigFileKind, string][]
   const tunnelState = overallState(tunnels)
-  const runningCount = Object.values(tunnels).filter((s) => s.state === 'active' || s.state === 'reconnecting' || s.state === 'connecting').length
+  const runningCount = Object.values(tunnels).filter(isTunnelRunning).length
 
   const mainMenu = async () => {
     const kb = config.settings.keybindings

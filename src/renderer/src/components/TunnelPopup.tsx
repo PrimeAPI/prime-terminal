@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ConfigSnapshot, TunnelSetStatus } from '../../../shared/types'
+import { isTunnelRunning, type ConfigSnapshot, type TunnelSetStatus } from '../../../shared/types'
 import { pt } from '../lib/api'
 import { useTicker } from '../lib/hooks'
 
@@ -74,7 +74,7 @@ export function TunnelPopup({ config, status, onManage, onClose }: Props) {
       {sets.length === 0 && <div className="empty">No port forwarding sets yet.</div>}
       {sets.map((set) => {
         const s = status[set.id]
-        const on = !!s && s.state !== 'off' && s.state !== 'error'
+        const on = isTunnelRunning(s)
         const server = servers.find((x) => x.id === set.server)
         const open = expanded[set.id] ?? (s?.state === 'error' || s?.entries.some((e) => e.state === 'error'))
         return (

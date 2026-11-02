@@ -68,6 +68,8 @@ export interface PtApi {
     onPrompt(cb: (id: string, req: PromptRequest) => void): Unsubscribe
     onCancel(cb: (id: string) => void): Unsubscribe
     respond(id: string, resp: PromptResponse): void
+    /** the dialog host is mounted; queued prompts may be delivered */
+    ready(): void
   }
   ui: {
     contextMenu(items: MenuItemSpec[]): Promise<string | null>

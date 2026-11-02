@@ -48,4 +48,5 @@ a running ssh-agent / Pageant is used automatically.
 
 `PT_SMOKE_SCREENSHOT=/tmp/shot.png [PT_SMOKE_JS=script.js] electron .` runs an optional script in the
 first window (it can use `window.pt`), saves a screenshot of every window and quits.
+In packaged builds it additionally requires `PT_ALLOW_SMOKE=1`.
 Use `HOME=/some/tmp XDG_CONFIG_HOME=/some/tmp/.config` to keep it away from your real config and known_hosts.
