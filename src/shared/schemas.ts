@@ -15,7 +15,7 @@ export const serversSchema = {
         type: 'object',
         additionalProperties: false,
         required: ['id', 'name'],
-        properties: { id: { type: 'string', minLength: 1 }, name: { type: 'string' } }
+        properties: { id: { type: 'string', minLength: 1 }, name: { type: 'string' }, parentId: { type: 'string', description: 'Parent folder id' } }
       }
     },
     servers: {

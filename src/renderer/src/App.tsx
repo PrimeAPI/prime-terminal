@@ -7,7 +7,10 @@ import { useConfig, useLocalStorage, useTabs, useTunnels } from './lib/hooks'
 import { scheme } from './lib/themes'
 import { TabBar } from './components/TabBar'
 import { TerminalView, type TerminalHandle } from './components/TerminalView'
-import { Sidebar } from './components/Sidebar'
+import { Sidebar, moveItems, type ItemKey } from './components/Sidebar'
+import { MoveDialog } from './components/MoveDialog'
+import { BackupDialog } from './components/BackupDialog'
+import { folderPath } from '../../shared/folders'
 import { QuickConnect } from './components/QuickConnect'
 import { ServerDialog } from './components/ServerDialog'
 import { TunnelPopup, overallState } from './components/TunnelPopup'
@@ -19,7 +22,9 @@ import { TextInputDialog } from './components/TextInputDialog'
 type Overlay =
   | { kind: 'quick' }
   | { kind: 'server'; server: Server | null; folderId?: string }
-  | { kind: 'folder'; folder: Folder | null }
+  | { kind: 'folder'; folder: Folder | null; parentId?: string }
+  | { kind: 'move'; items: ItemKey[] }
+  | { kind: 'backup'; mode: 'export' | 'import' }
   | { kind: 'sets' }
   | { kind: 'file'; file: ConfigFileKind }
   | null
@@ -160,7 +165,10 @@ export function App() {
       { id: 'import', label: 'Import from ~/.ssh/config' },
       { id: 'serversjson', label: 'Edit servers.json…' },
       { type: 'separator' },
-      { id: 'settings', label: 'Settings (settings.json)…' }
+      { id: 'settings', label: 'Settings (settings.json)…' },
+      { type: 'separator' },
+      { id: 'export', label: 'Export configuration…' },
+      { id: 'importcfg', label: 'Import configuration…' }
     ])
     if (r === 'quick') setOverlay({ kind: 'quick' })
     else if (r === 'window') pt.windows.newWindow()
@@ -170,6 +178,8 @@ export function App() {
     else if (r === 'newserver') setOverlay({ kind: 'server', server: null })
     else if (r === 'serversjson') setOverlay({ kind: 'file', file: 'servers' })
     else if (r === 'settings') setOverlay({ kind: 'file', file: 'settings' })
+    else if (r === 'export') setOverlay({ kind: 'backup', mode: 'export' })
+    else if (r === 'importcfg') setOverlay({ kind: 'backup', mode: 'import' })
     else if (r === 'import') {
       const res = await pt.config.importSshConfig()
       if (!res.ok) notify(res.error, true)
@@ -177,11 +187,11 @@ export function App() {
     }
   }
 
-  const saveFolder = async (folder: Folder | null, name: string) => {
+  const saveFolder = async (folder: Folder | null, name: string, parentId?: string) => {
     const doc = config.servers
     const next = folder
       ? { ...doc, folders: doc.folders.map((f) => (f.id === folder.id ? { ...f, name } : f)) }
-      : { ...doc, folders: [...doc.folders, { id: newId(), name }] }
+      : { ...doc, folders: [...doc.folders, { id: newId(), name, ...(parentId ? { parentId } : {}) }] }
     const r = await pt.config.saveServers(next)
     if (!r.ok) notify(r.error, true)
   }
@@ -193,7 +203,8 @@ export function App() {
           doc={config.servers}
           onOpen={(id, nw) => void open({ serverId: id }, nw)}
           onEdit={(server, folderId) => setOverlay({ kind: 'server', server, folderId })}
-          onRenameFolder={(folder) => setOverlay({ kind: 'folder', folder })}
+          onFolderDialog={(folder, parentId) => setOverlay({ kind: 'folder', folder, parentId })}
+          onMove={(items) => setOverlay({ kind: 'move', items })}
           notify={notify}
         />
       )}
@@ -276,13 +287,27 @@ export function App() {
       )}
       {overlay?.kind === 'folder' && (
         <TextInputDialog
-          title={overlay.folder ? 'Rename folder' : 'New folder'}
+          title={overlay.folder ? 'Rename folder' : overlay.parentId ? `New folder in ${folderPath(overlay.parentId, config.servers)}` : 'New folder'}
           label="Folder name"
           initial={overlay.folder?.name}
-          onSubmit={(name) => void saveFolder(overlay.folder, name)}
+          onSubmit={(name) => void saveFolder(overlay.folder, name, overlay.parentId)}
           onClose={() => setOverlay(null)}
         />
       )}
+      {overlay?.kind === 'move' && (
+        <MoveDialog
+          doc={config.servers}
+          items={overlay.items}
+          onClose={() => setOverlay(null)}
+          onMove={async (target) => {
+            const r = moveItems(config.servers, overlay.items, target)
+            if (r.skipped) notify('A folder cannot be moved into itself', true)
+            const res = await pt.config.saveServers(r.doc)
+            if (!res.ok) notify(res.error, true)
+          }}
+        />
+      )}
+      {overlay?.kind === 'backup' && <BackupDialog mode={overlay.mode} onClose={() => setOverlay(null)} notify={notify} />}
       {(overlay?.kind === 'sets' || setsUnder) && (
         <div style={{ display: overlay?.kind === 'sets' ? 'contents' : 'none' }}>
           <SetManager

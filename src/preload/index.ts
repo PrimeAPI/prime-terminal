@@ -26,6 +26,11 @@ const api: PtApi = {
     exportText: (name, text) => invoke('config:exportText', name, text),
     importText: () => invoke('config:importText')
   },
+  backup: {
+    export: (password) => invoke('backup:export', password),
+    pick: () => invoke('backup:pick'),
+    import: (token, opts) => invoke('backup:import', token, opts)
+  },
   sessions: {
     open: (target, opts) => invoke('sessions:open', target, opts),
     attach: (id, cols, rows) => invoke('sessions:attach', id, cols, rows),

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { AuthMethod, LocalServer, Server, ServersDoc, SshServer } from '../../../shared/types'
 import { validateServerJumpChain } from '../../../shared/proxy'
+import { folderPath } from '../../../shared/folders'
 import { newId } from '../../../shared/ids'
 import { pt } from '../lib/api'
 import { Modal } from './Modal'
@@ -141,11 +142,14 @@ export function ServerDialog({ doc, server, defaultFolderId, onClose, onSaved }:
         <label>Folder</label>
         <select value={folderId} onChange={(e) => setFolderId(e.target.value)}>
           <option value="">(none)</option>
-          {doc.folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
+          {doc.folders
+            .map((f) => ({ id: f.id, path: folderPath(f.id, doc) }))
+            .sort((a, b) => a.path.localeCompare(b.path))
+            .map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.path}
+              </option>
+            ))}
         </select>
 
         {type === 'ssh' ? (

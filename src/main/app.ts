@@ -17,6 +17,7 @@ import type {
 import { resolveServerHops, resolveSetHops } from '../shared/proxy'
 import { newId } from '../shared/ids'
 import { createConfigStores, type ConfigStores } from './config/configStores'
+import { applyBackup, BACKUP_EXTENSION, createBackup, inspectBackup, readBackup } from './config/backup'
 import { PromptService } from './prompts'
 import { LocalPtyBackend, SshShellBackend } from './sessions/backends'
 import { SessionManager } from './sessions/sessionManager'
@@ -55,6 +56,7 @@ export class PrimeApp {
   private dragging: { sessionId: string; fromWin: number; dropped: boolean } | null = null
   private adhocServers = new Map<string, SshServer>()
   private quitting = false
+  private pendingBackups = new Map<string, Uint8Array>()
   private started = new Set<string>()
   private knownHosts = new KnownHosts(join(homedir(), '.ssh', 'known_hosts'))
   private agentPaths = detectAgentPaths()
@@ -484,6 +486,60 @@ export class PrimeApp {
     h('config:importText', async (e) => {
       const p = await this.fileDialog(e.sender, 'open', { filters: jsonFilter, properties: ['openFile'] })
       return p ? readFileSync(p, 'utf8') : null
+    })
+
+    const backupFilters = [
+      { name: 'Prime Terminal backup', extensions: [BACKUP_EXTENSION, 'zip'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+    h('backup:export', async (e, password?: string) => {
+      const date = new Date().toISOString().slice(0, 10)
+      const p = await this.fileDialog(e.sender, 'save', {
+        title: 'Export configuration',
+        defaultPath: join(homedir(), `prime-terminal-${date}.${BACKUP_EXTENSION}`),
+        filters: backupFilters
+      })
+      if (!p) return null
+      try {
+        const s = this.stores
+        writeFileSync(p, createBackup({ servers: s.servers.value, sets: s.sets.value, settings: s.settings.value }, password || undefined), { mode: 0o600 })
+        return { ok: true, path: p }
+      } catch (err) {
+        return errorResult(err)
+      }
+    })
+    h('backup:pick', async (e) => {
+      const p = await this.fileDialog(e.sender, 'open', { title: 'Import configuration', filters: backupFilters, properties: ['openFile'] })
+      if (!p) return null
+      try {
+        const data = new Uint8Array(readFileSync(p))
+        const info = inspectBackup(data)
+        const token = newId()
+        this.pendingBackups.clear()
+        this.pendingBackups.set(token, data)
+        return { ok: true, token, path: p, info }
+      } catch (err) {
+        return errorResult(err)
+      }
+    })
+    h('backup:import', async (_e, token: string, opts: { password?: string; mode: 'merge' | 'replace' }) => {
+      const data = this.pendingBackups.get(token)
+      if (!data) return { ok: false, error: 'Choose the backup file again' }
+      try {
+        const s = this.stores
+        const incoming = readBackup(data, opts.password || undefined)
+        const result = applyBackup({ servers: s.servers.value, sets: s.sets.value, settings: s.settings.value }, incoming, opts.mode)
+        // stop tunnels of sets that no longer exist
+        const remaining = new Set(result.sets.sets.map((x) => x.id))
+        for (const set of s.sets.value.sets) if (!remaining.has(set.id)) await this.tunnels.deactivate(set.id)
+        s.servers.save(result.servers)
+        s.sets.save(result.sets)
+        if (opts.mode === 'replace') s.settings.save(result.settings)
+        this.pendingBackups.delete(token)
+        return { ok: true }
+      } catch (err) {
+        return errorResult(err)
+      }
     })
 
     h('sessions:open', (e, target: OpenTarget, opts?: { newWindow?: boolean; afterSessionId?: string }) => {

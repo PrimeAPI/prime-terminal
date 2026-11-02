@@ -44,6 +44,8 @@ export type Server = SshServer | LocalServer
 export interface Folder {
   id: string
   name: string
+  /** parent folder id; absent = top level */
+  parentId?: string
 }
 
 export interface ServersDoc {

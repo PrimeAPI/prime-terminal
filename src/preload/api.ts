@@ -13,6 +13,12 @@ import type {
 } from '../shared/types'
 
 export type SaveResult = { ok: true } | { ok: false; error: string }
+
+export interface BackupInfo {
+  createdAt: string
+  hasSecrets: boolean
+  counts: { servers: number; folders: number; sets: number }
+}
 export type Unsubscribe = () => void
 
 export interface PtApi {
@@ -28,6 +34,13 @@ export interface PtApi {
     pickKeyFile(): Promise<string | null>
     exportText(defaultName: string, text: string): Promise<boolean>
     importText(): Promise<string | null>
+  }
+  backup: {
+    /** Shows a save dialog; null = cancelled. Without password, secrets are not exported. */
+    export(password?: string): Promise<{ ok: true; path: string } | { ok: false; error: string } | null>
+    /** Shows an open dialog and inspects the file; null = cancelled. */
+    pick(): Promise<{ ok: true; token: string; path: string; info: BackupInfo } | { ok: false; error: string } | null>
+    import(token: string, opts: { password?: string; mode: 'merge' | 'replace' }): Promise<SaveResult>
   }
   sessions: {
     open(target: OpenTarget, opts?: { newWindow?: boolean; afterSessionId?: string }): Promise<SaveResult>
