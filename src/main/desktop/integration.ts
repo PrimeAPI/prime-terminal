@@ -148,7 +148,8 @@ export class DesktopIntegration {
    * is never written (and cleaned up) while the package is installed – also when an AppImage runs.
    */
   private installed(): boolean {
-    return process.platform === 'linux' && existsSync(SYSTEM_DESKTOP_FILE)
+    // .deb (system launcher) or snap (snapd provides launcher and icon)
+    return process.platform === 'linux' && (!!process.env.SNAP || existsSync(SYSTEM_DESKTOP_FILE))
   }
 
   /** Remove a user-level integration that a system package now replaces. */

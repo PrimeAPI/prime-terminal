@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, Menu } from 'electron'
@@ -6,7 +7,11 @@ import { APP_USER_MODEL_ID } from './desktop/integration'
 import { parseLaunchArgs, USAGE } from '../shared/launch'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
-const configDir = join(app.getPath('appData'), 'prime-terminal')
+// Inside the snap the launcher points XDG_CONFIG_HOME into the snap's own data folder; use the real
+// ~/.config so apt, snap and AppImage share one configuration.
+const configDir = process.env.SNAP
+  ? join(homedir(), '.config', 'prime-terminal')
+  : join(app.getPath('appData'), 'prime-terminal')
 // keep Chromium's own data next to the config instead of a second "Prime Terminal" folder
 app.setPath('userData', join(configDir, 'chromium'))
 app.setName('Prime Terminal')

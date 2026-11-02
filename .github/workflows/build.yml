@@ -53,6 +53,7 @@ jobs:
             dist/*.exe
             dist/*.AppImage
             dist/*.deb
+            dist/*.snap
           if-no-files-found: error
 
   release:
@@ -62,11 +63,46 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+      # Signed APT repository files attached to every release; apt then uses
+      # https://github.com/PrimeAPI/prime-terminal/releases/latest/download as repository.
+      - name: Build the APT repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          if [ -z "$APT_SIGNING_KEY" ]; then
+            echo "::warning::APT_SIGNING_KEY is not set – no APT repository files for this release"
+            exit 0
+          fi
+          mkdir apt
+          cp dist/*.deb apt/
+          scripts/apt-repo.sh apt
+          cp apt/Packages apt/Packages.gz apt/Release apt/InRelease apt/Release.gpg apt/prime-terminal.gpg dist/
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
+
+  snap:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages-Linux
+          path: dist
+      - name: Publish to the Snap Store
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
+            echo "::warning::SNAPCRAFT_STORE_CREDENTIALS is not set – snap not published"
+            exit 0
+          fi
+          sudo snap install snapcraft --classic
+          snapcraft upload --release=stable dist/*.snap

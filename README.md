@@ -5,9 +5,29 @@ proxy jumps and port forwarding sets that run in the background.
 
 ![icon](build/icons/128x128.png)
 
-## Download
+## Install
 
-Get the latest version from the [releases page](https://github.com/PrimeAPI/prime-terminal/releases):
+### Ubuntu / Debian (apt, with automatic updates)
+
+```bash
+sudo curl -fsSLo /usr/share/keyrings/prime-terminal.gpg \
+  https://github.com/PrimeAPI/prime-terminal/releases/latest/download/prime-terminal.gpg
+echo "deb [signed-by=/usr/share/keyrings/prime-terminal.gpg] https://github.com/PrimeAPI/prime-terminal/releases/latest/download ./" \
+  | sudo tee /etc/apt/sources.list.d/prime-terminal.list
+sudo apt update && sudo apt install prime-terminal
+```
+
+New versions then arrive with the normal system updates (`sudo apt upgrade`).
+
+### Snap
+
+```bash
+sudo snap install prime-terminal --classic
+```
+
+### Other downloads
+
+From the [releases page](https://github.com/PrimeAPI/prime-terminal/releases):
 
 | File | System | |
 |---|---|---|
@@ -16,7 +36,7 @@ Get the latest version from the [releases page](https://github.com/PrimeAPI/prim
 | `prime-terminal_<version>_amd64.deb` | Debian / Ubuntu | `sudo apt install ./prime-terminal_<version>_amd64.deb` |
 
 On the first start the portable versions offer to add themselves to the app menu and search.
-The `.deb` sets this up during installation.
+The apt and snap packages set this up during installation.
 
 The Windows exe is not code-signed, so SmartScreen shows a warning on the first start
 (*More info → Run anyway*).
@@ -74,7 +94,13 @@ npm run dist:linux   # AppImage + .deb in dist/
 npm run dist:win     # portable exe (on Windows)
 ```
 
-Releases are built by GitHub Actions: push a tag like `v1.2.3` and the release with all three
-files is created automatically.
+Releases are built by GitHub Actions: push a tag like `v1.2.3` and GitHub Actions will
+- build the exe, AppImage, deb and snap,
+- create the GitHub release including the signed APT repository files,
+- publish the snap to the Snap Store.
+
+One-time setup for maintainers:
+- APT signing key: `scripts/setup-apt-signing-key.sh`
+- Snap Store credentials: the `SNAPCRAFT_STORE_CREDENTIALS` secret
 
 The detailed specification is in [docs/SPEC.md](docs/SPEC.md) (German).

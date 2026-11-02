@@ -87,7 +87,19 @@ describe.skipIf(!hasPythonGi || !hasDbus || process.platform !== 'linux')('searc
       call('LaunchSearch', "['some', 'host']", '0'),
       'sleep 0.5'
     ].join('\n')
-    const stdout = execFileSync('dbus-run-session', ['--', 'sh', '-c', session], { encoding: 'utf8', timeout: 20000 })
+    // private bus without the system's service directories (an installed package would otherwise
+    // be activated instead of the script under test)
+    const busConfig = join(dir, 'session.conf')
+    writeFileSync(
+      busConfig,
+      `<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig><type>session</type><listen>unix:tmpdir=${dir}</listen>
+<policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>`
+    )
+    const stdout = execFileSync('dbus-run-session', [`--config-file=${busConfig}`, '--', 'sh', '-c', session], {
+      encoding: 'utf8',
+      timeout: 20000
+    })
     const lines = stdout.trim().split('\n')
     expect(lines[0]).toBe("(['s1'],)")
     expect(lines[1]).toBe("(['s1'],)")
