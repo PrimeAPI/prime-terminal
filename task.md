@@ -1,0 +1,408 @@
+# Task: Prime Terminal – plattformübergreifender SSH-Client
+
+Dieses Dokument ist die verbindliche Spezifikation für v1. Es fasst das ursprüngliche
+Anforderungsdokument und alle in der Abstimmung getroffenen Entscheidungen zusammen.
+Bei Widersprüchen gilt dieses Dokument.
+
+---
+
+## 1. Ziel
+
+Eine schlichte, portable Desktop-App (Linux + Windows), die als vollwertiger SSH-Client dient.
+Im Mittelpunkt steht ein klassisches Terminal mit Tabs und mehreren Fenstern. Zentrales
+Zusatzfeature ist Port Forwarding in Sets, das im Hintergrund läuft.
+
+Designprinzipien: schlicht, aufgeräumt, Fokus auf dem Terminal, keine Effekte, keine
+Dekoration und nichts Überladenes. Funktionen sollen intuitiv auffindbar sein. Die UI-Sprache ist **ausschließlich Englisch** (kein i18n).
+
+---
+
+## 2. Technologie-Stack (festgelegt)
+
+| Bereich | Wahl |
+|---|---|
+| App-Framework | **Electron** |
+| Sprache | **TypeScript** (Main, Preload, Renderer) |
+| SSH | **`ssh2`** (Node), läuft im Main-Prozess |
+| Terminal-Rendering | **xterm.js** (+ Addons: fit, search, web-links, webgl mit Canvas-Fallback) |
+| Lokale Shells | **`node-pty`** (ConPTY unter Windows) |
+| JSON-Editor | **CodeMirror 6** mit JSON-Schema-Validierung |
+| Packaging | **electron-builder** (`portable` für Windows, `AppImage` für Linux) |
+| Build | **lokal** über npm-Scripts (GitHub Actions erst später, siehe 3.1) |
+
+**Architekturgrundsatz:** Alle Sitzungen (SSH, lokale PTYs) und alle Tunnel leben im
+**Main-Prozess**. Renderer-Fenster sind nur Ansichten, die über IPC an eine Sitzungs-ID gebunden
+sind. Nur so kann ein Tab ohne Verbindungsabbruch in ein anderes Fenster wandern.
+
+---
+
+## 3. Plattformen & Bereitstellung
+
+- Zielplattformen: **Linux x64** und **Windows x64**.
+- Keine Installation nötig:
+  - Windows: **portable `.exe`** (unsigniert; die SmartScreen-Warnung beim ersten Start wird akzeptiert).
+  - Linux: **`AppImage`**.
+- Konfiguration liegt im **Benutzerprofil**:
+  - Linux: `~/.config/prime-terminal/`
+  - Windows: `%APPDATA%\prime-terminal\`
+### 3.1 Builds – vorerst nur lokal
+
+**Vorerst nur lokal bauen. Keine GitHub-Anbindung, kein Remote, keine Workflows, keine Releases.**
+
+npm-Scripts:
+- `npm run dev`: App im Entwicklungsmodus mit Hot-Reload für den Renderer.
+- `npm run lint`, `npm run typecheck`, `npm test`
+- `npm run dist:linux`: erzeugt die `AppImage` unter `dist/`.
+- `npm run dist:win`: erzeugt die portable `.exe` unter `dist/`.
+
+Wichtig: `node-pty` ist ein natives Modul und muss pro Plattform gegen die Electron-Version
+gebaut werden (`electron-builder install-app-deps` bzw. `@electron/rebuild`). Daraus folgt:
+- Die `.AppImage` wird auf Linux gebaut.
+- Die `.exe` wird **auf Windows gebaut**. Ein Cross-Build von Linux aus (wine) funktioniert wegen `node-pty` nicht zuverlässig und ist kein Ziel.
+
+### 3.2 Später (nicht Teil der aktuellen Aufgabe): GitHub Actions
+
+Die Builds sollen später über GitHub Actions automatisiert werden. Das wird erst umgesetzt, wenn ausdrücklich gewünscht. Geplant ist:
+- Bei jedem Push/PR: Lint, Typecheck, Tests, Build (Matrix aus `ubuntu-latest` und `windows-latest`).
+- Bei Git-Tag `v*`: Build und Upload von `.exe` und `.AppImage` an ein GitHub Release.
+
+Die lokalen npm-Scripts sind so anzulegen, dass die CI sie später 1:1 aufrufen kann.
+
+---
+
+## 4. Datenmodell & Konfigurationsdateien
+
+Alle Dateien sind JSON, menschenlesbar und von Hand editierbar. Passwörter und
+Key-Passphrasen werden **im Klartext** gespeichert. Das ist bewusst so entschieden (wie bei MobaXterm).
+
+```
+prime-terminal/
+  servers.json        # gespeicherte Verbindungen (SSH + lokal), Ordner
+  forward-sets.json   # Port-Forwarding-Sets
+  settings.json       # Terminal-/UI-Einstellungen + Keybindings
+```
+
+- Jedes Objekt hat eine stabile `id` (UUID).
+- Bei Änderungen an den Dateien von außen werden sie neu geladen (Datei-Watcher). Bei ungültigem JSON
+  bleibt der letzte gültige Stand aktiv, und es erscheint eine Fehlermeldung.
+
+### 4.1 Server (`servers.json`)
+
+Zwei Typen: `ssh` und `local`.
+
+```jsonc
+{
+  "folders": [{ "id": "…", "name": "Production" }],
+  "servers": [
+    {
+      "id": "…",
+      "type": "ssh",
+      "name": "web-01",
+      "folderId": "…",            // optional
+      "host": "web-01.example.com",
+      "port": 22,
+      "username": "deploy",
+      "auth": {
+        "method": "key",          // "password" | "key" | "agent" | "auto"
+        "password": "…",          // bei method=password (Klartext)
+        "keyPath": "~/.ssh/id_ed25519", // bei method=key; leer = Standard-Keys aus ~/.ssh probieren
+        "keyPassphrase": "…"      // optional, Klartext
+      },
+      "proxyJump": {
+        "enabled": true,          // Schalter: Kette an/aus
+        "chain": ["<serverId>", "<serverId>"]  // geordnet, erster = erster Hop
+      }
+    },
+    {
+      "id": "…",
+      "type": "local",
+      "name": "PowerShell 7",
+      "shell": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      "args": [],
+      "cwd": "~",
+      "autoDetected": true
+    }
+  ]
+}
+```
+
+Regeln:
+- `auth.method = "auto"` (Default): Reihenfolge Agent, dann Keys aus `~/.ssh` (`id_ed25519`, `id_ecdsa`, `id_rsa`), dann Passwort (falls gespeichert, sonst Abfrage), dann keyboard-interactive.
+- Ist ein Passwort oder eine Passphrase nötig, aber nicht gespeichert, erscheint ein Dialog. Dort gibt es die Checkbox „Save password“.
+- **Proxy Jumps:** Jeder Hop verweist auf einen **gespeicherten SSH-Server** und nutzt dessen Host, Port, User und Auth. Die eigenen Jumps eines Hop-Servers werden **nicht** rekursiv aufgelöst; die Kette ist immer explizit. Zyklen und Selbstreferenzen werden beim Speichern abgelehnt.
+- `local`-Server können weder Jump-Host noch Ziel eines Forwarding-Sets sein.
+
+### 4.2 Port-Forwarding-Sets (`forward-sets.json`)
+
+Ein Set enthält **seinen Zielserver und optional eine eigene Proxy-Jump-Kette**.
+
+```jsonc
+{
+  "sets": [
+    {
+      "id": "…",
+      "name": "App X",
+      "server": "<serverId>",       // Pflicht: gespeicherter SSH-Server
+      "proxyJump": ["<serverId>"],  // optional, siehe Regeln
+      "autoStart": false,           // beim App-Start automatisch aktivieren
+      "forwards": [
+        { "id": "…", "name": "db",    "type": "local",   "enabled": true,
+          "bindAddress": "127.0.0.1", "bindPort": 5432, "targetHost": "db.internal", "targetPort": 5432 },
+        { "id": "…", "name": "hook",  "type": "remote",  "enabled": true,
+          "bindAddress": "127.0.0.1", "bindPort": 9000, "targetHost": "localhost",   "targetPort": 3000 },
+        { "id": "…", "name": "socks", "type": "dynamic", "enabled": true,
+          "bindAddress": "127.0.0.1", "bindPort": 1080 }
+      ]
+    }
+  ]
+}
+```
+
+Regeln:
+- `type`: `local` (-L), `remote` (-R) oder `dynamic` (-D, SOCKS5). Der Nutzer wählt den Typ pro Eintrag.
+- `proxyJump`:
+  - Feld fehlt: Die Jump-Konfiguration des Zielservers wird verwendet (inklusive dessen An/Aus-Schalter).
+  - `[]`: direkte Verbindung ohne Jumps.
+  - Liste: genau diese Kette.
+- `enabled` pro Eintrag: Deaktivierte Einträge werden beim Aktivieren des Sets übersprungen.
+- `bindAddress` hat den Default `127.0.0.1`.
+- Ein Set ist zur gleichen Zeit höchstens einmal aktiv.
+
+**Austauschformat (Copy/Paste, Export/Import):** Ein Set oder ein Eintrag wird als JSON in die
+System-Zwischenablage kopiert. Beim **Export** werden Server-Referenzen zusätzlich als
+Name aufgelöst (`"serverName": "web-01"`), damit der Import auf einer anderen Installation funktioniert.
+Beim **Import/Paste** wird zuerst die `id`, dann der Name aufgelöst. Lässt sich ein Server nicht
+auflösen, wird das Set trotzdem importiert, aber als „unresolved server“ markiert und kann erst
+nach Zuordnung aktiviert werden. Beim Paste werden neue `id`s vergeben.
+
+### 4.3 Settings (`settings.json`)
+
+Alle Einstellungen sind über diese Datei editierbar. In der App gibt es „Settings → Open settings.json“,
+das die Datei im integrierten JSON-Editor öffnet, mit Schema-Validierung und Autocomplete.
+Gespeicherte Änderungen wirken **sofort** (Live-Reload). Eine eigene Settings-Formular-UI ist für v1
+**nicht** nötig.
+
+```jsonc
+{
+  "terminal": {
+    "fontFamily": "monospace",
+    "fontSize": 13,
+    "colorScheme": "dark",          // Presets: dark (Default), light, solarized-dark, solarized-light, …
+    "scrollback": 10000,
+    "copyOnSelect": false,
+    "rightClick": "paste",          // "paste" | "menu"
+    "cursorStyle": "block",
+    "cursorBlink": true
+  },
+  "ssh": {
+    "keepaliveInterval": 30,
+    "connectTimeout": 15
+  },
+  "tunnels": {
+    "reconnectBackoffMin": 1,
+    "reconnectBackoffMax": 60
+  },
+  "keybindings": { "newTab": "Ctrl+Shift+T", "…": "…" }
+}
+```
+
+---
+
+## 5. SSH-Verbindungen
+
+- Server lassen sich anlegen, bearbeiten, duplizieren und löschen (Dialog). Ordner lassen sich anlegen, umbenennen und löschen.
+- Authentifizierung:
+  - Passwort
+  - SSH-Key mit wählbarem Key-Pfad (Dateidialog, Start in `~/.ssh`)
+  - Standard-Keys aus `~/.ssh`
+  - **ssh-agent**: unter Linux `SSH_AUTH_SOCK`, unter Windows die OpenSSH-Agent-Pipe `\\.\pipe\openssh-ssh-agent` und Pageant
+  - **keyboard-interactive** für 2FA/OTP-Prompts im Dialog
+  - Verschlüsselte Keys über Passphrase, gespeichert oder abgefragt
+- **Host-Key-Prüfung** gegen `~/.ssh/known_hosts` (lesen und schreiben):
+  - Unbekannter Host: Ein Dialog zeigt den Fingerprint (SHA256) mit der Frage „Trust and save?“. Bei Zustimmung wird der Key in `known_hosts` geschrieben.
+  - **Geänderter** Key: Die Verbindung wird hart blockiert, mit deutlicher Warnung. Es gibt keinen „trotzdem verbinden“-Button.
+  - Hashed-Einträge (`|1|…`) in `known_hosts` müssen gelesen werden können.
+- Proxy Jumps über eine Kette beliebiger Länge (via `forwardOut` bzw. `direct-tcpip`). Der An/Aus-Schalter pro Server ist auch direkt im Kontextmenü der Serverliste erreichbar.
+- **Import aus `~/.ssh/config`**: einmalig über „Import from ~/.ssh/config“. Ausgewertet werden
+  `Host` (ohne Wildcards), `HostName`, `User`, `Port`, `IdentityFile` und `ProxyJump`. ProxyJump-Hosts werden, falls nötig,
+  als eigene Server angelegt und verknüpft. `Match` und `Include` werden ignoriert, mit Hinweis.
+  Ein Live-Abgleich findet nicht statt.
+
+---
+
+## 6. Lokale Shells
+
+- Sie erscheinen als Servertyp `local` in derselben Serverliste und öffnen sich wie SSH-Sitzungen in Tabs.
+- **Automatische Erkennung** beim Start (Einträge mit `autoDetected: true`; sie lassen sich ausblenden, aber nicht dauerhaft löschen):
+  - Linux: `$SHELL` (Fallback `/bin/bash`)
+  - Windows: PowerShell 7 (`pwsh`), Windows PowerShell, cmd, Git Bash (falls installiert), alle WSL-Distros (`wsl -l -q`)
+- Eigene lokale Profile mit Shell-Pfad, Argumenten und Startverzeichnis sind möglich.
+
+---
+
+## 7. Port Forwarding
+
+### 7.1 Laufzeitverhalten
+
+- Tunnel laufen **ausschließlich im Hintergrund**. Sie haben nie einen Terminal-Tab und sind von offenen Tabs unabhängig.
+- Jedes aktive Set baut seine eigene SSH-Verbindung auf (inklusive Jumps). Ein Terminal-Tab und ein Set teilen sich keine Verbindung.
+- Alle Einträge eines Sets werden gemeinsam aktiviert und deaktiviert. Deaktivierte Einträge (`enabled: false`) werden übersprungen.
+- **Teilfehler:** Schlägt ein einzelner Eintrag fehl (z. B. Port belegt), laufen die übrigen weiter. Der Status wird pro Eintrag angezeigt, mit Fehlertext.
+- **Verbindungsfehler beim Aktivieren** (Auth, Host nicht erreichbar, Host-Key, …): **kein** automatischer Retry. Das Set geht auf „error“ und zeigt die Fehlermeldung.
+- **Abbruch einer bereits aufgebauten Verbindung:** automatischer Reconnect mit exponentiellem
+  Backoff (1 s, 2 s, 4 s, … bis max. 60 s, einstellbar). Der Status lautet dabei „reconnecting“. Manuelles Deaktivieren bricht den Reconnect ab.
+- Keepalive alle 30 s (einstellbar).
+- **Auto-Start:** Sets mit `autoStart: true` werden beim App-Start automatisch aktiviert.
+- **Beim Beenden der App werden alle Tunnel geschlossen.** Es gibt kein Tray-Icon und keinen Hintergrundbetrieb ohne Fenster;
+  schließt man das letzte Fenster, wird die App beendet.
+
+### 7.2 Tunnel-Popup (Steuerung)
+
+- Ein kleiner **Button in der Tab-Leiste jedes Fensters** öffnet ein Popup bzw. Dropdown, kein eigenes Fenster und keinen Tab.
+- Das Button-Icon zeigt den Gesamtstatus: keine Tunnel, alle ok, Fehler oder reconnecting.
+- Inhalt des Popups:
+  - Liste aller Sets mit An/Aus-Schalter, Statusindikator (off, connecting, active, reconnecting, error) und Zielserver
+  - Aufklappbar pro Set: einzelne Einträge mit Status und Fehlertext
+  - Link „Manage sets…“, der die Set-Verwaltung öffnet
+- Der Zustand ist in allen Fenstern synchron, weil er im Main-Prozess liegt.
+
+### 7.3 Set-Verwaltung (UI)
+
+Die Set-Verwaltung ist ein eigener Dialog mit zwei Ansichten, zwischen denen man umschalten kann: **Form** und **JSON**. Beide bearbeiten dasselbe Set.
+
+**Form-Ansicht** (Hauptweg; gut durchdacht, schnell bedienbar):
+- Links: Liste der Sets mit den Aktionen New, Duplicate, Delete, Copy, Paste und Export/Import (Datei).
+- Rechts: Set-Kopf mit Name, Zielserver (Dropdown aus SSH-Servern), Proxy Jump (Optionen
+  „use server default“, „direct“ oder „custom chain“ mit sortierbarer Server-Liste) und Auto-Start-Checkbox.
+- Darunter eine **Tabelle der Einträge**: eine Zeile pro Forward mit Spalten Enabled, Name, Type
+  (L/R/D), Bind address, Bind port, Target host, Target port.
+  - Bearbeitung direkt in der Zelle, Tab/Enter springt weiter.
+  - Bei `dynamic` sind die Target-Spalten deaktiviert.
+  - Zeilenaktionen: Add, Duplicate, Delete, Copy, Paste, Umsortieren per Drag.
+  - Mehrfachauswahl (Shift/Ctrl-Klick) zum Kopieren, Löschen oder Einfügen mehrerer Einträge.
+  - Shortcuts in der Tabelle: `Ctrl+C`, `Ctrl+V`, `Ctrl+D` (duplizieren), `Del`.
+- **Validierung live** pro Feld:
+  - Ports im Bereich 1–65535
+  - doppelte Bind-Ports innerhalb des Sets und über aktive Sets hinweg (Warnung)
+  - Pflichtfelder je Typ
+  - Ports < 1024 erzeugen einen Hinweis (unter Linux sind Root-Rechte nötig)
+- Änderungen an einem **aktiven** Set wirken erst nach erneutem Aktivieren. Der Dialog zeigt dann „Restart set to apply“ mit Button.
+
+**JSON-Ansicht:**
+- CodeMirror-Editor mit dem JSON des aktuell gewählten Sets, Schema-Validierung, Fehlermarkierung und Autocomplete.
+- Bei ungültigem JSON ist kein Speichern möglich, und der Fehler wird inline angezeigt.
+- Zusätzlich gibt es eine Option „Edit all sets as JSON“, die die gesamte `forward-sets.json` im Editor öffnet.
+
+**Copy/Paste:**
+- Sets und Einträge werden als JSON in die System-Zwischenablage kopiert, damit sie zwischen Sets, Fenstern und Installationen austauschbar sind (Format siehe 4.2).
+- Paste erkennt automatisch, ob die Zwischenablage ein Set, einen Eintrag oder eine Liste von Einträgen enthält.
+
+---
+
+## 8. Terminal
+
+- Der Terminal-Emulator ist xterm.js mit Rendering wie in einem klassischen Terminal (Monospace, Farbschema, kein Schnickschnack).
+- Unicode, 256 Farben und Truecolor, Maus-Reporting (für vim, htop, tmux), Bracketed Paste, klickbare URLs (Ctrl+Klick).
+- Resize wird an die SSH-Sitzung bzw. das PTY weitergegeben (Window-Change).
+- Rechtsklick fügt ein (konfigurierbar). Markieren kopiert **nicht** automatisch (konfigurierbar).
+- **Sitzungsabbruch:** kein Auto-Reconnect. Im Tab erscheint „Connection closed – press Enter to reconnect“, und der Tab bleibt offen.
+  Ein Reconnect öffnet eine neue Sitzung im selben Tab.
+
+### 8.1 Tastenkombinationen (Defaults, alle über `settings.json` änderbar)
+
+| Shortcut | Funktion |
+|---|---|
+| `Ctrl+C` | SIGINT, wird **immer** ans Terminal durchgereicht (auch bei Markierung) |
+| `Ctrl+Shift+C` | Markierten Text kopieren |
+| `Ctrl+Shift+V` | Einfügen |
+| `Ctrl+Shift+T` | Neuer Tab (öffnet Quick-Connect) |
+| `Ctrl+Shift+W` | Tab schließen |
+| `Ctrl+Shift+N` | Neues Fenster |
+| `Ctrl+PgUp` / `Ctrl+PgDn` | Vorheriger / nächster Tab |
+| `Ctrl+Shift+PgUp` / `Ctrl+Shift+PgDn` | Tab nach links / rechts verschieben |
+| `Alt+1` … `Alt+9` | Zu Tab 1…9 springen |
+| `Ctrl+Plus` / `Ctrl+Minus` / `Ctrl+0` | Zoom größer / kleiner / zurücksetzen |
+| `Ctrl+Shift+F` | Suche im Scrollback |
+| `Ctrl+Shift+B` | Server-Sidebar ein/aus |
+| `Ctrl+Shift+O` | Quick-Connect |
+
+Alle übrigen Tasten, z. B. `Ctrl+D`, `Ctrl+Z`, `Ctrl+R`, `Ctrl+L`, `Alt+…` und die Funktionstasten, gehen unverändert ans Terminal.
+
+---
+
+## 9. Tabs & Fenster
+
+- Jede Sitzung (SSH oder lokal) läuft in einem eigenen Tab. Der Tab-Titel ist standardmäßig der Servername; per Doppelklick lässt er sich umbenennen.
+- Tabs lassen sich per Drag umsortieren.
+- **Tear-off:** Zieht man einen Tab aus der Tab-Leiste heraus, entsteht ein neues Fenster an der Mausposition mit derselben, weiterlaufenden Sitzung (kein Reconnect, Scrollback bleibt erhalten).
+- Zieht man einen Tab in die Tab-Leiste eines **anderen** Fensters, wird er dorthin verschoben.
+- Tab-Kontextmenü: Rename, Duplicate (neue Sitzung zum selben Server), Move to new window, Close, Close others.
+- Mehrere unabhängige Fenster sind möglich, auch auf mehreren Monitoren. Fensterposition und -größe des letzten Fensters werden gemerkt.
+- Wird ein Fenster mit offenen Sitzungen geschlossen, kommt eine **Rückfrage**.
+- Beim Schließen des letzten Fensters wird die App beendet, und alle Tunnel werden geschlossen (siehe 7.1).
+- **Keine** Wiederherstellung von Sitzungen oder Tabs beim App-Start.
+
+---
+
+## 10. Serverliste & Navigation
+
+- **Sidebar** links, einklappbar (`Ctrl+Shift+B`):
+  - Ordner/Gruppen, Suchfeld oben, lokale Shells als eigene Gruppe „Local“
+  - Doppelklick öffnet einen Tab
+  - Kontextmenü: Connect, Connect in new window, Edit, Duplicate, Delete, Proxy Jump an/aus
+  - Server lassen sich per Drag in Ordner verschieben
+- **Quick-Connect** (`Ctrl+Shift+O`, auch `Ctrl+Shift+T`):
+  - Overlay mit Fuzzy-Suche über alle Server
+  - Enter öffnet einen Tab
+  - Eingabe von `user@host[:port]` ohne gespeicherten Server ermöglicht eine Ad-hoc-Verbindung, mit Option „Save“
+- Ein Leerzustand ohne Tabs zeigt die Serverliste bzw. einen Hinweis auf Quick-Connect.
+
+---
+
+## 11. Außer Scope für v1
+
+- SFTP / Dateibrowser
+- Split-Panes innerhalb eines Tabs
+- Broadcast-Eingabe an mehrere Sitzungen
+- Session-Logging
+- X11-Forwarding
+- Sync zwischen Installationen (außer JSON-Copy/Paste/Export)
+- Tray-Icon / Hintergrundbetrieb ohne Fenster
+- Verschlüsselung gespeicherter Passwörter / Master-Passwort
+- Code-Signing der Windows-exe
+- GitHub (Repo-Remote, Actions, Releases), vorerst nur lokale Builds
+- macOS, ARM-Builds
+- Settings-Formular-UI (Settings nur über `settings.json`)
+- Wiederherstellung von Sitzungen beim Start
+
+---
+
+## 12. Vorgeschlagene Meilensteine
+
+1. **Gerüst:** Electron und TypeScript, Main/Preload/Renderer, IPC-Schicht, Config-Store mit Datei-Watcher und JSON-Schemas, lokale `dist`-Scripts (früh einen AppImage-Build testen, damit `node-pty` und die Packaging-Probleme sofort sichtbar werden).
+2. **Terminal-Kern:** lokale Shell in xterm.js, Shortcuts, `settings.json` mit Live-Reload.
+3. **SSH:** Verbindungen, alle Auth-Methoden, known_hosts, keyboard-interactive, Reconnect-Overlay.
+4. **Serververwaltung:** Sidebar, Dialoge, Ordner, Quick-Connect, Import aus `~/.ssh/config`.
+5. **Proxy Jumps:** Kette, Schalter, Validierung.
+6. **Tabs & Fenster:** Umsortieren, Tear-off, Verschieben zwischen Fenstern, Rückfragen.
+7. **Port Forwarding:** Engine (L/R/D, Jumps, Teilfehler, Backoff, Auto-Start), Tunnel-Popup.
+8. **Set-Verwaltung:** Form-Ansicht, JSON-Ansicht, Copy/Paste, Export/Import.
+9. **Lokale Release-Builds:** `dist:linux` und `dist:win` erzeugen lauffähige Artefakte, mit Smoke-Test auf beiden Plattformen.
+10. *(Später, nur auf Anfrage)* GitHub Actions und Releases, siehe 3.2.
+
+---
+
+## 13. Abnahmekriterien (Auszug)
+
+- Die portable `.exe` startet auf einem frischen Windows 10/11 ohne Installation. Die `AppImage` startet auf einem aktuellen Ubuntu/Fedora.
+- Zwei SSH-Tabs und ein lokaler Tab laufen parallel. Ein Tab lässt sich in ein neues Fenster ziehen und wieder zurück, ohne dass die Sitzung abbricht.
+- `Ctrl+C` beendet `ping` auf dem Remote-Host. `Ctrl+Shift+C/V` kopieren und fügen ein. vim, htop und tmux funktionieren korrekt.
+- Eine Verbindung über eine Jump-Kette mit 2 Hops funktioniert. Ist der Schalter deaktiviert, wird direkt verbunden.
+- Ein Set mit -L, -R und -D über einen Jump-Host lässt sich über das Popup aktivieren:
+  - Alle Ports funktionieren.
+  - Ein belegter Port führt zu einem Fehler nur bei diesem Eintrag.
+  - Wird die Verbindung gekappt, folgt ein Reconnect mit Backoff.
+  - Ein falsches Passwort beim Start führt zu „error“ ohne Retry.
+- Ein Set lässt sich als JSON kopieren und in einer anderen Installation einfügen. Der Server wird dabei per Name aufgelöst.
+- Eine Änderung in `settings.json` (z. B. `fontSize`) wirkt sofort in allen offenen Tabs.
+- Ein geänderter Host-Key blockiert die Verbindung.

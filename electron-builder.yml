@@ -1,0 +1,24 @@
+appId: dev.prime-terminal.app
+productName: Prime Terminal
+artifactName: ${name}-${version}-${arch}.${ext}
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - node_modules/node-pty/**
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: System
+  executableName: prime-terminal
+win:
+  target:
+    - target: portable
+      arch: [x64]
+portable:
+  artifactName: ${name}-${version}-portable.${ext}
+npmRebuild: true
