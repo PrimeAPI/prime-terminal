@@ -314,7 +314,12 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
     onClose()
   }
 
-  const proxyMode = !set ? 'default' : set.proxyJump === undefined ? 'default' : set.proxyJump.length === 0 ? 'direct' : 'custom'
+  // effective jump chain: explicit on the set, else the target server's own (enabled) chain
+  const targetServer = set ? sshServers.find((x) => x.id === set.server) : undefined
+  const jumpChain: string[] = !set
+    ? []
+    : (set.proxyJump ?? (targetServer?.proxyJump?.enabled ? targetServer.proxyJump.chain : []))
+  const jumpCandidates = sshServers.filter((x) => x.id !== set?.server)
   const showRestart = set && restartHint.includes(set.id) && isTunnelRunning(status[set.id])
 
   return (
@@ -366,10 +371,21 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
         <div className="setlist">
           <ul>
             {draft.sets.map((s) => (
-              <li key={s.id} className={s.id === selId ? 'sel' : ''} onClick={() => selectSet(s.id)}>
+              <li key={s.id} className={s.id === selId ? 'sel' : ''} onClick={() => selectSet(s.id)} title={status[s.id]?.error}>
+                <button
+                  className={'run-btn' + (isTunnelRunning(status[s.id]) ? ' on' : '')}
+                  title={isTunnelRunning(status[s.id]) ? 'Stop' : saved.sets.some((x) => x.id === s.id) ? 'Start (saved version)' : 'Save the set first'}
+                  disabled={!saved.sets.some((x) => x.id === s.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void (isTunnelRunning(status[s.id]) ? pt.tunnels.deactivate(s.id) : pt.tunnels.activate(s.id))
+                  }}
+                >
+                  {isTunnelRunning(status[s.id]) ? '■' : '▶'}
+                </button>
                 <span className={'state-dot ' + (status[s.id]?.state ?? 'off')} style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0 }} />
                 <span className="nm">{s.name || '(unnamed)'}</span>
-                {s.autoStart && <span className="badge">auto</span>}
+                {s.autoStart && <span className="badge" title="Starts with the app">auto</span>}
               </li>
             ))}
             {draft.sets.length === 0 && <li className="hint">No sets yet</li>}
@@ -448,88 +464,92 @@ export function SetManager({ config, status, onClose, onEditAllJson, notify }: P
                     ))}
                   </select>
                   <label>Proxy jump</label>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <select
-                      value={proxyMode}
-                      className={cellCls(undefined, 'proxyJump')}
-                      onChange={(e) =>
-                        updateSet((s) => {
-                          const n = { ...s }
-                          if (e.target.value === 'default') delete n.proxyJump
-                          else if (e.target.value === 'direct') n.proxyJump = []
-                          else {
-                            const srv = sshServers.find((x) => x.id === s.server)
-                            const def = srv?.proxyJump?.chain ?? []
-                            n.proxyJump = def.length ? [...def] : sshServers.filter((x) => x.id !== s.server).slice(0, 1).map((x) => x.id)
-                          }
-                          return n
-                        })
-                      }
-                    >
-                      <option value="default">Use server setting</option>
-                      <option value="direct">Direct (no jump)</option>
-                      <option value="custom">Custom chain</option>
-                    </select>
-                    {proxyMode === 'custom' &&
-                      set.proxyJump!.map((hid, i) => (
-                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                          {i > 0 && <span className="hint">→</span>}
-                          <select
-                            value={hid}
-                            onChange={(e) => updateSet((s) => ({ ...s, proxyJump: s.proxyJump!.map((x, j) => (j === i ? e.target.value : x)) }))}
-                          >
-                            {!sshServers.some((x) => x.id === hid) && <option value={hid}>(missing: {hid})</option>}
-                            {sshServers
-                              .filter((x) => x.id !== set.server)
-                              .map((x) => (
-                                <option key={x.id} value={x.id}>
-                                  {x.name}
-                                </option>
-                              ))}
-                          </select>
-                          <button className="icon" title="Remove hop" onClick={() => updateSet((s) => ({ ...s, proxyJump: s.proxyJump!.filter((_, j) => j !== i) }))}>
-                            ✕
-                          </button>
-                        </span>
-                      ))}
-                    {proxyMode === 'custom' && (
+                  <div className="jump-chain" style={{ gridColumn: '2 / -1' }}>
+                    <label style={{ color: 'inherit' }}>
+                      <input
+                        type="checkbox"
+                        checked={jumpChain.length > 0}
+                        onChange={(e) => {
+                          if (!e.target.checked) return updateSet((s) => ({ ...s, proxyJump: [] }))
+                          const first = jumpCandidates[0]
+                          if (!first) return notify('Add another SSH server first – it will be used as jump host', true)
+                          updateSet((s) => ({ ...s, proxyJump: [first.id] }))
+                        }}
+                      />{' '}
+                      Use proxy jump
+                    </label>
+                    {jumpChain.map((hid, i) => (
+                      <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                        <span className="hint">{i === 0 ? 'via' : '→'}</span>
+                        <select
+                          value={hid}
+                          className={cellCls(undefined, 'proxyJump')}
+                          title={issueFor(undefined, 'proxyJump')?.message}
+                          onChange={(e) => updateSet((s) => ({ ...s, proxyJump: jumpChain.map((x, j) => (j === i ? e.target.value : x)) }))}
+                        >
+                          {!sshServers.some((x) => x.id === hid) && <option value={hid}>(missing server)</option>}
+                          {jumpCandidates.map((x) => (
+                            <option key={x.id} value={x.id}>
+                              {x.name} ({x.username}@{x.host})
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="icon"
+                          title="Remove this jump host"
+                          onClick={() => updateSet((s) => ({ ...s, proxyJump: jumpChain.filter((_, j) => j !== i) }))}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    {jumpChain.length > 0 && jumpCandidates.some((x) => !jumpChain.includes(x.id)) && (
                       <button
                         className="icon"
-                        title="Add hop"
+                        title="Add another jump host after the last one"
                         onClick={() => {
-                          const cand = sshServers.find((x) => x.id !== set.server && !set.proxyJump!.includes(x.id))
-                          if (cand) updateSet((s) => ({ ...s, proxyJump: [...s.proxyJump!, cand.id] }))
+                          const cand = jumpCandidates.find((x) => !jumpChain.includes(x.id))
+                          if (cand) updateSet((s) => ({ ...s, proxyJump: [...jumpChain, cand.id] }))
                         }}
                       >
                         + hop
                       </button>
                     )}
-                    {proxyMode === 'default' && (
-                      <span className="hint">
-                        {(() => {
-                          const srv = sshServers.find((x) => x.id === set.server)
-                          if (!srv?.proxyJump?.enabled || !srv.proxyJump.chain.length) return 'direct'
-                          return 'via ' + srv.proxyJump.chain.map((id) => servers.servers.find((x) => x.id === id)?.name ?? '?').join(' → ')
-                        })()}
-                      </span>
-                    )}
+                    {set.proxyJump === undefined && jumpChain.length > 0 && <span className="hint">(as configured for the server)</span>}
                   </div>
-                  <label>Auto-start</label>
-                  <label style={{ color: 'inherit' }}>
-                    <input
-                      type="checkbox"
-                      checked={!!set.autoStart}
-                      onChange={(e) =>
-                        updateSet((s) => {
-                          const n = { ...s }
-                          if (e.target.checked) n.autoStart = true
-                          else delete n.autoStart
-                          return n
-                        })
-                      }
-                    />{' '}
-                    Activate when the app starts
-                  </label>
+                  <label>Options</label>
+                  <div style={{ gridColumn: '2 / -1', display: 'flex', gap: 18 }}>
+                    <label style={{ color: 'inherit' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!set.autoStart}
+                        onChange={(e) =>
+                          updateSet((s) => {
+                            const n = { ...s }
+                            if (e.target.checked) n.autoStart = true
+                            else delete n.autoStart
+                            return n
+                          })
+                        }
+                      />{' '}
+                      Start when the app starts
+                    </label>
+                    <label style={{ color: 'inherit' }}>
+                      <input
+                        type="checkbox"
+                        checked={set.autoReconnect !== false}
+                        onChange={(e) =>
+                          updateSet((s) => {
+                            const n = { ...s }
+                            if (e.target.checked) delete n.autoReconnect
+                            else n.autoReconnect = false
+                            return n
+                          })
+                        }
+                      />{' '}
+                      Reconnect automatically
+                    </label>
+                  </div>
                 </div>
 
                 <div className="entries-toolbar">

@@ -240,6 +240,7 @@ export function App() {
                   status={tunnels}
                   onManage={() => setOverlay({ kind: 'sets' })}
                   onClose={() => setTunnelOpen(false)}
+                  notify={notify}
                 />
               )}
             </>

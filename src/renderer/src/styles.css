@@ -584,7 +584,7 @@ kbd {
   position: absolute;
   top: 32px;
   right: 6px;
-  width: 360px;
+  width: min(520px, 92vw);
   max-height: 70vh;
   overflow-y: auto;
   background: var(--bg-2);
@@ -976,4 +976,70 @@ table.fwd col.c-addr {
 .pick-list li.sel {
   background: var(--accent);
   color: var(--accent-fg);
+}
+
+/* tunnel popup controls */
+.tunnel-popup .tp-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.tunnel-popup .tp-header button {
+  font-weight: 400;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.tunnel-popup .set-row .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tunnel-popup .set-row .name .state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.run-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 11px;
+  flex-shrink: 0;
+  color: var(--ok);
+}
+.run-btn.on {
+  color: var(--err);
+}
+.flags {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-dim);
+}
+.chip.on {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+.setmgr .setlist li .run-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+.jump-chain {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
 }

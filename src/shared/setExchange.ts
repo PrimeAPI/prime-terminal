@@ -19,6 +19,7 @@ export interface ExchangeSet {
   server: string
   proxyJump?: string[]
   autoStart?: boolean
+  autoReconnect?: boolean
   forwards: ExchangeEntry[]
 }
 
@@ -47,6 +48,7 @@ export function toExchangeSet(set: ForwardSet, servers: ServersDoc): ExchangeSet
     server: set.server ? serverName(set.server, servers) : (set.unresolvedServer ?? ''),
     ...(set.proxyJump ? { proxyJump: set.proxyJump.map((id) => serverName(id, servers)) } : {}),
     ...(set.autoStart ? { autoStart: true } : {}),
+    ...(set.autoReconnect === false ? { autoReconnect: false } : {}),
     forwards: set.forwards.map(toExchangeEntry)
   }
 }
@@ -86,6 +88,7 @@ export function fromExchangeSet(x: ExchangeSet, servers: ServersDoc): ForwardSet
   if (!resolved && x.server) set.unresolvedServer = x.server
   if (x.proxyJump) set.proxyJump = x.proxyJump.map((r) => resolveServerRef(r, servers) ?? r)
   if (x.autoStart) set.autoStart = true
+  if (x.autoReconnect === false) set.autoReconnect = false
   return set
 }
 
@@ -113,6 +116,7 @@ function setProblem(v: unknown, path = 'set'): string | null {
   if (v.proxyJump !== undefined && (!Array.isArray(v.proxyJump) || v.proxyJump.some((p) => typeof p !== 'string')))
     return `${path}.proxyJump must be a list of server names`
   if (v.autoStart !== undefined && typeof v.autoStart !== 'boolean') return `${path}.autoStart must be true or false`
+  if (v.autoReconnect !== undefined && typeof v.autoReconnect !== 'boolean') return `${path}.autoReconnect must be true or false`
   if (!Array.isArray(v.forwards)) return `${path}.forwards must be a list`
   for (let i = 0; i < v.forwards.length; i++) {
     const p = entryProblem(v.forwards[i], `${path}.forwards[${i}]`)

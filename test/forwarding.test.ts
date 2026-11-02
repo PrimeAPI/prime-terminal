@@ -96,6 +96,13 @@ describe('set exchange format', () => {
     })
   })
 
+  it('keeps auto-start and auto-reconnect flags in the exchange format', () => {
+    const x = toExchangeSet(set({ autoStart: true, autoReconnect: false }), servers)
+    expect(x).toMatchObject({ autoStart: true, autoReconnect: false })
+    expect(fromExchangeSet(x, servers)).toMatchObject({ autoStart: true, autoReconnect: false })
+    expect(toExchangeSet(set(), servers)).not.toHaveProperty('autoReconnect')
+  })
+
   it('round-trips through import with fresh ids', () => {
     const imported = fromExchangeSet(toExchangeSet(set({ proxyJump: ['id-bastion'] }), servers), servers)
     expect(imported.id).not.toBe('set1')

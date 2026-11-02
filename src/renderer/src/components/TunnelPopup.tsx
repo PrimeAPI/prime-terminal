@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { isTunnelRunning, type ConfigSnapshot, type TunnelSetStatus } from '../../../shared/types'
+import { isTunnelRunning, type ConfigSnapshot, type ForwardSet, type TunnelSetStatus } from '../../../shared/types'
 import { pt } from '../lib/api'
 import { useTicker } from '../lib/hooks'
 
@@ -8,19 +8,20 @@ interface Props {
   status: Record<string, TunnelSetStatus>
   onManage: () => void
   onClose: () => void
+  notify: (msg: string, error?: boolean) => void
 }
 
 export function describeStatus(s: TunnelSetStatus | undefined, now = Date.now()): string {
-  if (!s) return 'off'
+  if (!s) return 'stopped'
   switch (s.state) {
     case 'off':
-      return 'off'
+      return 'stopped'
     case 'connecting':
       return 'connecting…'
     case 'active': {
       const enabled = s.entries.filter((e) => e.state !== 'off')
       const ok = enabled.filter((e) => e.state === 'active').length
-      return ok === enabled.length ? `active · ${ok} forward${ok === 1 ? '' : 's'}` : `active · ${ok}/${enabled.length} ok`
+      return ok === enabled.length ? `running · ${ok} forward${ok === 1 ? '' : 's'}` : `running · ${ok}/${enabled.length} ok`
     }
     case 'reconnecting': {
       const secs = s.nextRetryAt ? Math.max(0, Math.ceil((s.nextRetryAt - now) / 1000)) : 0
@@ -46,7 +47,23 @@ function fwdLabel(f: { type: string; bindAddress?: string; bindPort: number; tar
   return `${f.name ? f.name + ' · ' : ''}${flag} ${bind} → ${tgt}`
 }
 
-export function TunnelPopup({ config, status, onManage, onClose }: Props) {
+/** Save a change to one set without opening the set manager. */
+export async function patchSet(config: ConfigSnapshot, id: string, patch: (s: ForwardSet) => ForwardSet): Promise<string | null> {
+  const r = await pt.config.saveSets({ sets: config.sets.sets.map((s) => (s.id === id ? patch(structuredClone(s)) : s)) })
+  return r.ok ? null : r.error
+}
+
+export function routeLabel(set: ForwardSet, config: ConfigSnapshot): string {
+  const servers = config.servers.servers
+  const name = (id: string) => servers.find((x) => x.id === id)?.name ?? '?'
+  const target = servers.find((x) => x.id === set.server)
+  if (!target) return set.unresolvedServer ? `server not found: ${set.unresolvedServer}` : 'no server'
+  const chain =
+    set.proxyJump ?? (target.type === 'ssh' && target.proxyJump?.enabled ? target.proxyJump.chain : [])
+  return [...chain.map(name), target.name].join(' → ')
+}
+
+export function TunnelPopup({ config, status, onManage, onClose, notify }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const reconnecting = Object.values(status).some((s) => s.state === 'reconnecting')
@@ -66,33 +83,69 @@ export function TunnelPopup({ config, status, onManage, onClose }: Props) {
     }
   }, [onClose])
 
-  const servers = config.servers.servers
   const sets = config.sets.sets
+  const running = sets.filter((s) => isTunnelRunning(status[s.id]))
+
+  const toggleFlag = async (set: ForwardSet, flag: 'autoStart' | 'autoReconnect') => {
+    const err = await patchSet(config, set.id, (s) => {
+      if (flag === 'autoStart') {
+        if (s.autoStart) delete s.autoStart
+        else s.autoStart = true
+      } else if (s.autoReconnect === false) delete s.autoReconnect
+      else s.autoReconnect = false
+      return s
+    })
+    if (err) notify(err, true)
+  }
 
   return (
     <div className="tunnel-popup" ref={ref}>
+      <div className="tp-header">
+        <span>Port forwarding</span>
+        <span style={{ flex: 1 }} />
+        <button disabled={running.length === sets.length || sets.length === 0} onClick={() => sets.filter((s) => !isTunnelRunning(status[s.id])).forEach((s) => void pt.tunnels.activate(s.id))}>
+          Start all
+        </button>
+        <button disabled={running.length === 0} onClick={() => running.forEach((s) => void pt.tunnels.deactivate(s.id))}>
+          Stop all
+        </button>
+      </div>
       {sets.length === 0 && <div className="empty">No port forwarding sets yet.</div>}
       {sets.map((set) => {
         const s = status[set.id]
         const on = isTunnelRunning(s)
-        const server = servers.find((x) => x.id === set.server)
-        const open = expanded[set.id] ?? (s?.state === 'error' || s?.entries.some((e) => e.state === 'error'))
+        const open = expanded[set.id] ?? (s?.state === 'error' || !!s?.entries.some((e) => e.state === 'error'))
         return (
           <div className="set" key={set.id}>
             <div className="set-row">
               <button
-                className={'switch' + (on ? ' on' : '')}
-                role="switch"
-                aria-checked={on}
-                title={on ? 'Deactivate' : 'Activate'}
+                className={'run-btn' + (on ? ' on' : '')}
+                title={on ? 'Stop' : 'Start'}
                 onClick={() => void (on ? pt.tunnels.deactivate(set.id) : pt.tunnels.activate(set.id))}
-              />
+              >
+                {on ? '■' : '▶'}
+              </button>
               <div className="info" onClick={() => setExpanded({ ...expanded, [set.id]: !open })}>
-                <div className="name">{set.name || '(unnamed)'}</div>
-                <div className="sub">
-                  <span className={'state-dot ' + (s?.state ?? 'off')} style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', marginRight: 5 }} />
-                  {describeStatus(s)} · {server ? server.name : set.unresolvedServer ? `unresolved: ${set.unresolvedServer}` : 'no server'}
+                <div className="name">
+                  <span className={'state-dot ' + (s?.state ?? 'off')} />
+                  {set.name || '(unnamed)'}
+                  <span className="sub" style={{ marginLeft: 6 }}>
+                    {describeStatus(s)}
+                  </span>
                 </div>
+                <div className="sub">{routeLabel(set, config)}</div>
+              </div>
+              <div className="flags">
+                <button className={'chip' + (set.autoStart ? ' on' : '')} title="Start this set when the app starts" onClick={() => void toggleFlag(set, 'autoStart')}>
+                  auto-start
+                </button>
+                <button
+                  className={'chip' + (set.autoReconnect !== false ? ' on' : '')}
+                  title="Reconnect automatically when the connection drops"
+                  onClick={() => void toggleFlag(set, 'autoReconnect')}
+                >
+                  reconnect
+                </button>
               </div>
               <button className="icon" onClick={() => setExpanded({ ...expanded, [set.id]: !open })} title="Details">
                 {open ? '▾' : '▸'}

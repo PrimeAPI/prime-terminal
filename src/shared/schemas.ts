@@ -117,6 +117,7 @@ export const setsSchema = {
             description: 'absent = server default, [] = direct, list = this chain (server ids)'
           },
           autoStart: { type: 'boolean', description: 'Activate when the app starts' },
+          autoReconnect: { type: 'boolean', description: 'Reconnect after a dropped connection (default true)' },
           forwards: { type: 'array', items: forwardEntry }
         }
       }
@@ -134,6 +135,7 @@ export const exchangeSetSchema = {
     server: { type: 'string', description: 'Name of a saved SSH server' },
     proxyJump: { type: 'array', items: { type: 'string' }, description: 'absent = server default, [] = direct, list = server names' },
     autoStart: { type: 'boolean' },
+    autoReconnect: { type: 'boolean', description: 'default true' },
     forwards: {
       type: 'array',
       items: {

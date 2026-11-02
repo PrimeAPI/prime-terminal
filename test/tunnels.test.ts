@@ -187,6 +187,26 @@ describe('TunnelManager', () => {
     expect(interactive.slice(1).every((x) => x === false)).toBe(true)
   })
 
+  it('does not reconnect when auto-reconnect is off for the set', async () => {
+    const { echo, target, sets, mgr, connects } = await setup()
+    const lp = await freePort()
+    sets.set('s', {
+      id: 's',
+      name: 'S',
+      server: 'target',
+      proxyJump: [],
+      autoReconnect: false,
+      forwards: [{ id: 'l', type: 'local', enabled: true, bindAddress: '127.0.0.1', bindPort: lp, targetHost: '127.0.0.1', targetPort: echo.port }]
+    })
+    await mgr.activate('s')
+    target.dropAll()
+    await waitFor(() => st(mgr, 's').state === 'error')
+    expect(st(mgr, 's').error).toMatch(/connection lost/i)
+    await new Promise((r) => setTimeout(r, 400))
+    expect(connects()).toBe(1)
+    await expect(echoRoundTrip(lp)).rejects.toThrow(/ECONNREFUSED/)
+  })
+
   it('stops listeners on deactivate and cancels pending reconnects', async () => {
     const { echo, target, sets, mgr, connects } = await setup()
     const lp = await freePort()

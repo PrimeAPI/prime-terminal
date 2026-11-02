@@ -32,6 +32,10 @@ Cross-building the Windows exe on Linux is not supported (native modules).
 - `settings.json` – terminal settings and keybindings (applied live)
 - `window-state.json` – last window position
 
+Export/import of the whole configuration: main menu → *Export configuration…* creates a `.ptbackup`
+file (a plain ZIP). Saved passwords are only included when you set an export password; they are
+then stored encrypted in `secrets.enc`.
+
 Host keys are checked against `~/.ssh/known_hosts`; keys default to `~/.ssh/id_*`;
 a running ssh-agent / Pageant is used automatically.
 

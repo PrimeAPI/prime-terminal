@@ -76,6 +76,8 @@ export interface ForwardSet {
   /** absent = use the server's own jump config, [] = direct, list = this chain. */
   proxyJump?: string[]
   autoStart?: boolean
+  /** reconnect automatically after a dropped connection (default true) */
+  autoReconnect?: boolean
   forwards: ForwardEntry[]
 }
 

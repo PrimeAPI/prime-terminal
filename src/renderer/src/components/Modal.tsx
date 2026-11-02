@@ -16,7 +16,11 @@ export function Modal({ title, onClose, onSubmit, children, footer, size = 'norm
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null
-    const first = ref.current?.querySelector<HTMLElement>('[autofocus], input, select, textarea, button.primary, button')
+    const body = ref.current?.querySelector('.body')
+    const first =
+      ref.current?.querySelector<HTMLElement>('[autofocus]') ??
+      body?.querySelector<HTMLElement>('input, select, textarea, button') ??
+      ref.current?.querySelector<HTMLElement>('footer button.primary, footer button')
     first?.focus()
     return () => prev?.focus?.()
   }, [])

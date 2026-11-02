@@ -32,7 +32,9 @@ class Runner {
   constructor(
     private readonly set: ForwardSet,
     private readonly deps: TunnelManagerDeps,
-    private readonly emit: (s: TunnelSetStatus) => void
+    private readonly emit: (s: TunnelSetStatus) => void,
+    /** called when the runner stops by itself (no auto-reconnect) */
+    private readonly onGiveUp: () => void = () => {}
   ) {
     this.status = {
       setId: set.id,
@@ -99,12 +101,27 @@ class Runner {
     await Promise.all(r.map((f) => f.close().catch(() => {})))
   }
 
+  /** Live value, so toggling auto-reconnect applies to a running set immediately. */
+  private autoReconnect(): boolean {
+    return (this.deps.getSet(this.set.id) ?? this.set).autoReconnect !== false
+  }
+
   private async onDrop(conn: SshConnection) {
     if (this.conn !== conn) return
     this.conn = null
     await this.closeForwards()
     if (this.stopped) return
+    if (!this.autoReconnect()) return this.giveUp(conn.lastError?.message)
     this.scheduleReconnect(conn.lastError?.message)
+  }
+
+  private giveUp(reason?: string) {
+    this.update({
+      state: 'error',
+      error: `Connection lost${reason ? `: ${reason}` : ''}`,
+      entries: this.status.entries.map((e) => ({ id: e.id, state: 'off' as const }))
+    })
+    this.onGiveUp()
   }
 
   private scheduleReconnect(reason?: string) {
@@ -122,6 +139,7 @@ class Runner {
   private async reconnect() {
     this.timer = null
     if (this.stopped) return
+    if (!this.autoReconnect()) return this.giveUp(this.status.error)
     try {
       await this.connectAndAttach(this.deps.resolveHops(this.set), false)
     } catch (e) {
@@ -160,9 +178,19 @@ export class TunnelManager extends EventEmitter {
     await this.runners.get(setId)?.stop()
     // snapshot: later edits apply only after re-activation
     const snapshot: ForwardSet = structuredClone(set)
-    const runner = new Runner(snapshot, this.deps, (s) => {
-      if (this.runners.get(setId) === runner) this.publish(s)
-    })
+    const runner = new Runner(
+      snapshot,
+      this.deps,
+      (s) => {
+        if (this.runners.get(setId) === runner) this.publish(s)
+      },
+      () => {
+        if (this.runners.get(setId) === runner) {
+          this.runners.delete(setId)
+          void runner.stop()
+        }
+      }
+    )
     this.runners.set(setId, runner)
     await runner.start()
   }

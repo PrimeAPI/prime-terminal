@@ -427,3 +427,41 @@ Präzisierungen und Abweichungen gegenüber dem Text oben:
 - **Automatisch erkannte Shells** bekommen stabile, aus dem Shell-Typ abgeleitete UUIDs.
 - **Zusätzliche Dateien im Config-Ordner:** `window-state.json` (letzte Fensterposition) und `chromium/` (Electron-Cache).
 - **Windows-`.exe`:** Der Build ist nur auf Windows möglich, mit Visual Studio Build Tools für die nativen Module. Ein Cross-Build von Linux aus bricht an `cpu-features` ab.
+
+---
+
+## 15. Erweiterungen nach v1
+
+### 15.1 Ordner und Unterordner
+- Ordner lassen sich beliebig tief verschachteln (`folders[].parentId` in `servers.json`).
+- Verschieben geht auf zwei Wegen:
+  - **Drag & Drop** in der Sidebar: Server und Ordner auf einen Ordner ziehen. Auf „Ungrouped“, „Local“ oder eine freie Fläche ziehen verschiebt auf die oberste Ebene.
+  - **„Move to…“** im Kontextmenü: Dialog mit Ordnerbaum und Filter.
+- **Mehrfachauswahl** mit Strg/Shift-Klick (Strg+A wählt alles). Mehrere Einträge lassen sich gemeinsam verschieben oder löschen.
+- Ein Ordner kann nicht in sich selbst oder einen eigenen Unterordner verschoben werden. Zyklen in `servers.json` werden beim Speichern abgelehnt.
+- Wird ein Ordner gelöscht, wandern seine Server und Unterordner eine Ebene nach oben.
+- Kontextmenü eines Ordners: New server here, New subfolder, Rename, Move to, Delete.
+
+### 15.2 Export/Import der gesamten Konfiguration
+- Hauptmenü → „Export configuration…“ / „Import configuration…“.
+- Datei `*.ptbackup`, technisch ein normales ZIP mit `manifest.json`, `servers.json`, `forward-sets.json` und `settings.json`.
+- **Ohne Passwort** werden gespeicherte Passwörter und Passphrasen nicht exportiert.
+- **Mit Passwort** liegen sie zusätzlich in `secrets.enc` (AES-256-GCM, Schlüssel per scrypt). Die übrigen Dateien bleiben lesbar und enthalten keine Secrets.
+- Import-Modi:
+  - **Merge:** Ordner, Server und Sets werden über ihre id aktualisiert oder hinzugefügt. Lokale Einträge und lokale Einstellungen bleiben, lokale Passwörter bleiben, sofern das Backup keine eigenen mitbringt.
+  - **Replace:** Das Backup wird zur gesamten Konfiguration. Tunnel von Sets, die es danach nicht mehr gibt, werden gestoppt.
+- Ein Backup mit Secrets kann auch ohne Passwort importiert werden, dann ohne Secrets.
+- Private Keys und `known_hosts` sind nicht Teil des Exports.
+
+### 15.3 Port Forwarding: Bedienung
+- **Proxy Jump im Set:** Checkbox „Use proxy jump“, dann den gespeicherten Server wählen, über den gesprungen wird. „+ hop“ hängt weitere Jump-Hosts an.
+  - Checkbox aus: direkte Verbindung.
+  - Hat das Set keine eigene Angabe, gilt die Jump-Konfiguration des Zielservers. Die UI zeigt dann „as configured for the server“.
+- **Tunnel-Übersicht** (Button ⇄ in der Tab-Leiste), ähnlich MobaSSHTunnel:
+  - pro Set ein Start/Stop-Button, Status und Route (z. B. „bastion → app-server“)
+  - Umschalter **auto-start** und **reconnect**, die sofort gespeichert werden
+  - „Start all“ / „Stop all“
+- **Auto-Reconnect pro Set** (`autoReconnect`, Standard an):
+  - Aus: Bricht die Verbindung ab, geht das Set auf „error: Connection lost“ und wird nicht neu verbunden.
+  - Das Umschalten wirkt sofort, auch bei laufenden Sets.
+- Set-Verwaltung: Start/Stop-Buttons in der Set-Liste. Unter „Options“ stehen „Start when the app starts“ und „Reconnect automatically“.
